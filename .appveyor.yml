@@ -23,7 +23,7 @@ install:
 build_script:
   - ant
 
-artifact: .*beatoraja.*\.zip/
+artifact: '**\beatoraja*.zip'
 
 cache:
   - C:\ant
