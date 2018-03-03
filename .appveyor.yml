@@ -21,7 +21,7 @@ install:
   - cmd: java -version
 
 build_script:
-  - ant
+  - ant release
 
 artifacts:
   - path: '**\beatoraja*.zip'
