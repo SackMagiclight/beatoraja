@@ -21,7 +21,7 @@ install:
   - cmd: java -version
 
 build_script:
-  - ant build
+  - ant
 
 cache:
   - C:\ant
