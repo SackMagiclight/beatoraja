@@ -23,7 +23,8 @@ install:
 build_script:
   - ant
 
+artifact: .*beatoraja.*\.zip/
+
 cache:
   - C:\ant
-  - C:\ivy
 
