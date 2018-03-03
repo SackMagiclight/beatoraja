@@ -23,7 +23,7 @@ install:
 build_script:
   - ant
 
-artifact:
+artifacts:
   - path: '**\beatoraja*.zip'
 
 cache:
