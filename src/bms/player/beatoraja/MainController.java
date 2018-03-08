@@ -307,6 +307,11 @@ public class MainController extends ApplicationAdapter {
 		final long t = System.currentTimeMillis();
 		sprite = new SpriteBatch();
 
+		generator = new FreeTypeFontGenerator(Gdx.files.internal("skin/default/VL-Gothic-Regular.ttf"));
+		FreeTypeFontParameter parameter = new FreeTypeFontParameter();
+		parameter.size = 24;
+		systemfont = generator.generateFont(parameter);
+
 		input = new BMSPlayerInputProcessor(config, player);
 		switch(config.getAudioDriver()) {
 		case Config.AUDIODRIVER_SOUND:
@@ -335,10 +340,6 @@ public class MainController extends ApplicationAdapter {
 			changeState(STATE_SELECTMUSIC);
 		}
 
-		generator = new FreeTypeFontGenerator(Gdx.files.internal("skin/default/VL-Gothic-Regular.ttf"));
-		FreeTypeFontParameter parameter = new FreeTypeFontParameter();
-		parameter.size = 24;
-		systemfont = generator.generateFont(parameter);
 		Logger.getGlobal().info("初期化時間(ms) : " + (System.currentTimeMillis() - t));
 		
 		Thread polling = new Thread(() -> {
@@ -821,8 +822,8 @@ public class MainController extends ApplicationAdapter {
 		@Override
 		public void run() {
 			ConfigurationBuilder cb = new ConfigurationBuilder();
-			cb.setOAuthConsumerKey("**dummyKey**")
-			  .setOAuthConsumerSecret("**dummyKey**")
+			cb.setOAuthConsumerKey(player.getTwitterConsumerKey())
+			  .setOAuthConsumerSecret(player.getTwitterConsumerSecret())
 			  .setOAuthAccessToken(player.getTwitterAccessToken())
 			  .setOAuthAccessTokenSecret(player.getTwitterAccessTokenSecret());
 			TwitterFactory twitterFactory = new TwitterFactory(cb.build());
