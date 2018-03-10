@@ -150,13 +150,22 @@ public class Config {
 	private boolean updatesong = false;
 
 	private int autosavereplay[] = {0,0,0,0};
+	
+	private int skinPixmapGen = 4;
 
 	public Config() {
 		tableURL = new String[] { "http://bmsnormal2.syuriken.jp/table.html",
-				"http://bmsnormal2.syuriken.jp/table_insane.html", "http://dpbmsdelta.web.fc2.com/table/dpdelta.html",
+				"http://bmsnormal2.syuriken.jp/table_insane.html",
+				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=easy",
+				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=normal",
+				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=hard",
+				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=fc",
+				"http://dpbmsdelta.web.fc2.com/table/dpdelta.html",
 				"http://dpbmsdelta.web.fc2.com/table/insane.html",
 				"http://flowermaster.web.fc2.com/lrnanido/gla/LN.html",
-				"http://stellawingroad.web.fc2.com/new/pms.html" };
+				"http://stellawingroad.web.fc2.com/new/pms.html",
+				"http://sky.geocities.jp/exclusion_bms/table24k/table.html",
+		};
 		int maxSkinType = 0;
 		for (SkinType type : SkinType.values()) {
 			if (type.getId() > maxSkinType) {
@@ -438,6 +447,14 @@ public class Config {
 
 	public void setDisplaymode(DisplayMode displaymode) {
 		this.displaymode = displaymode;
+	}
+
+	public int getSkinPixmapGen() {
+		return skinPixmapGen;
+	}
+
+	public void setSkinPixmapGen(int skinPixmapGen) {
+		this.skinPixmapGen = skinPixmapGen;
 	}
 
 	public enum DisplayMode {
