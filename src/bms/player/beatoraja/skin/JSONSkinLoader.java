@@ -383,6 +383,9 @@ public class JSONSkinLoader extends SkinLoader{
 									img.timer, img.cycle, img.angle, (int) ((img.angle == 1 || img.angle == 3
 											? ((float)dstr.width / sk.w) : ((float)dstr.height / sk.h)) * img.range),
 									img.type);
+							((SkinSlider) obj).setRefNum(img.isRefNum);
+							((SkinSlider) obj).setMin(img.min);
+							((SkinSlider) obj).setMax(img.max);
 							break;
 						}
 					}
@@ -417,6 +420,9 @@ public class JSONSkinLoader extends SkinLoader{
 										img.timer, img.cycle);
 								((SkinGraph) obj).setDirection(img.angle);
 								((SkinGraph) obj).setReferenceID(img.type);
+								((SkinGraph) obj).setRefNum(img.isRefNum);
+								((SkinGraph) obj).setMin(img.min);
+								((SkinGraph) obj).setMax(img.max);
 								break;
 							}
 						}
@@ -432,6 +438,13 @@ public class JSONSkinLoader extends SkinLoader{
 					for (JudgeGraph ggraph : sk.judgegraph) {
 						if (dst.id.equals(ggraph.id)) {
 							SkinNoteDistributionGraph st = new SkinNoteDistributionGraph(ggraph.type, ggraph.delay, ggraph.backTexOff, ggraph.orderReverse, ggraph.noGap);
+							obj = st;
+							break;
+						}
+					}
+					for (BPMGraph ggraph : sk.bpmgraph) {
+						if (dst.id.equals(ggraph.id)) {
+							SkinBPMGraph st = new SkinBPMGraph(ggraph.delay, ggraph.lineWidth, ggraph.mainBPMColor, ggraph.minBPMColor, ggraph.maxBPMColor, ggraph.otherBPMColor, ggraph.stopLineColor, ggraph.transitionLineColor);
 							obj = st;
 							break;
 						}
@@ -1041,6 +1054,7 @@ public class JSONSkinLoader extends SkinLoader{
 		public Graph[] graph = new Graph[0];
 		public GaugeGraph[] gaugegraph = new GaugeGraph[0];
 		public JudgeGraph[] judgegraph = new JudgeGraph[0];
+		public BPMGraph[] bpmgraph = new BPMGraph[0];
 		public NoteSet note;
 		public Gauge gauge;
 		public BGA bga;
@@ -1152,6 +1166,9 @@ public class JSONSkinLoader extends SkinLoader{
 		public int angle;
 		public int range;
 		public int type;
+		public boolean isRefNum = false;
+		public int min = 0;
+		public int max = 0;
 	}
 
 	public static class Graph {
@@ -1167,6 +1184,9 @@ public class JSONSkinLoader extends SkinLoader{
 		public int cycle;
 		public int angle = 1;
 		public int type;
+		public boolean isRefNum = false;
+		public int min = 0;
+		public int max = 0;
 	}
 
 	public static class GaugeGraph {
@@ -1180,6 +1200,18 @@ public class JSONSkinLoader extends SkinLoader{
 		public int delay = 500;
 		public int orderReverse = 0;
 		public int noGap = 0;
+	}
+
+	public static class BPMGraph {
+		public String id;
+		public int delay = 0;
+		public int lineWidth = 2;
+		public String mainBPMColor = "00ff00";
+		public String minBPMColor = "0000ff";
+		public String maxBPMColor = "ff0000";
+		public String otherBPMColor = "ffff00";
+		public String stopLineColor = "ff00ff";
+		public String transitionLineColor = "7f7f7f";
 	}
 
 	public static class NoteSet {

@@ -18,6 +18,7 @@ import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.IRScoreData.SongTrophy;
 import bms.player.beatoraja.PlayerResource.PlayMode;
+import bms.player.beatoraja.ScoreDatabaseAccessor.ScoreDataCollector;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.ir.IRResponse;
 import bms.player.beatoraja.select.bar.*;
@@ -108,8 +109,13 @@ public class MusicSelector extends MainState {
 
 		scorecache = new ScoreDataCache() {
 			@Override
-			protected Map<String, IRScoreData> readScoreDatasFromSource(SongData[] songs, int lnmode) {
-				return pda.readScoreDatas(songs, lnmode);
+			protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
+				return pda.readScoreData(song.getSha256(), song.hasUndefinedLongNote(), lnmode);
+			}
+
+			@Override
+			protected void readScoreDatasFromSource(ScoreDataCollector collector, SongData[] songs, int lnmode) {
+				pda.readScoreDatas(collector, songs, lnmode);
 			}
 		};
 
@@ -157,19 +163,13 @@ public class MusicSelector extends MainState {
 					if(info != null) {
 						rivalcaches.put(info,  new ScoreDataCache() {
 
-							protected Map<String, IRScoreData> readScoreDatasFromSource(SongData[] songs, int lnmode) {
-								List<String> noln = new ArrayList<String>();
-								List<String> ln = new ArrayList<String>();
-								for (SongData song : songs) {
-									if (song.hasUndefinedLongNote()) {
-										ln.add(song.getSha256());
-									} else {
-										noln.add(song.getSha256());
-									}
-								}
-								Map<String, IRScoreData> result = scoredb.getScoreDatas(noln.toArray(new String[0]), 0);
-								result.putAll(scoredb.getScoreDatas(ln.toArray(new String[0]), lnmode));
-								return result;
+							@Override
+							protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
+								return scoredb.getScoreData(song.getSha256(), song.hasUndefinedLongNote() ? lnmode : 0);
+							}
+
+							protected void readScoreDatasFromSource(ScoreDataCollector collector, SongData[] songs, int lnmode) {
+								scoredb.getScoreDatas(collector,songs, lnmode);
 							}
 						});
 					}
@@ -371,14 +371,17 @@ public class MusicSelector extends MainState {
 
 	private void readCourse(PlayMode mode) {
 		final PlayerResource resource = main.getPlayerResource();
-		if (((GradeBar) bar.getSelected()).existsAllSongs()) {
+		final GradeBar course = (GradeBar) bar.getSelected();
+		if (course.existsAllSongs()) {
 			resource.clear();
-			List<Path> files = new ArrayList<Path>();
-			for (SongData song : ((GradeBar) bar.getSelected()).getSongDatas()) {
-				files.add(Paths.get(song.getPath()));
+			final SongData[] songs = course.getSongDatas();
+			Path[] files = new Path[songs.length];
+			int i = 0;
+			for (SongData song : songs) {
+				files[i++] = Paths.get(song.getPath());
 			}
-			if (resource.setCourseBMSFiles(files.toArray(new Path[files.size()]))) {
-				for (CourseData.CourseDataConstraint constraint : ((GradeBar) bar.getSelected()).getConstraint()) {
+			if (resource.setCourseBMSFiles(files)) {
+				for (CourseData.CourseDataConstraint constraint : course.getConstraint()) {
 					switch (constraint) {
 					case CLASS:
 						if (mode == PlayMode.PLAY || mode.isAutoPlayMode()) {
@@ -419,7 +422,7 @@ public class MusicSelector extends MainState {
 				}
 				preview.stop();
 				resource.setCoursetitle(bar.getSelected().getTitle());
-				resource.setBMSFile(files.get(0), mode);
+				resource.setBMSFile(files[0], mode);
 				main.changeState(MainController.STATE_DECIDE);
 				banners.disposeOld();
 			} else {
