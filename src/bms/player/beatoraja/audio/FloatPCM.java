@@ -1,6 +1,7 @@
 package bms.player.beatoraja.audio;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * 32bit float PCM
@@ -15,42 +16,34 @@ public class FloatPCM extends PCM<float[]> {
 
 	protected static FloatPCM loadPCM(PCMLoader loader) throws IOException {
 		float[] sample = null;
-		final int bytes = loader.bytes;
-		final byte[] pcm = loader.pcm;
+		final int bytes = loader.pcm.limit();
+		final ByteBuffer pcm = loader.pcm;
+		pcm.rewind();
 
 		switch(loader.bitsPerSample) {
 		case 8:
 			sample = new float[bytes];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (pcm[i] - 128) / 128.0f;
+				sample[i] = (pcm.get() - 128) / 128.0f;
 			}
 			break;
 		case 16:
 			// final long time = System.nanoTime();
 			sample = new float[bytes / 2];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (float) ((pcm[i * 2] & 0xff) | (pcm[i * 2 + 1] << 8)) / Short.MAX_VALUE;
+				sample[i] = (float) (pcm.getShort()) / Short.MAX_VALUE;
 			}
-
-			// ShortBuffer shortbuf =
-			// ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
-			// shortbuf.get(sample);
-			// System.out.println(p.toString() + " : " + (System.nanoTime()
-			// - time));
 			break;
 		case 24:
 			sample = new float[bytes / 3];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (float) (((pcm[i * 3] & 0xff) << 8) | ((pcm[i * 3 + 1] & 0xff) << 16) | ((pcm[i * 3 + 2] & 0xff) << 24)) / Integer.MAX_VALUE;
+				sample[i] = (float) (((pcm.get(i * 3) & 0xff) << 8) | ((pcm.get(i * 3 + 1) & 0xff) << 16) | ((pcm.get(i * 3 + 2) & 0xff) << 24)) / Integer.MAX_VALUE;
 			}
 			break;
 		case 32:
-			int pos = 0;
 			sample = new float[bytes / 4];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = Float.intBitsToFloat((pcm[pos] & 0xff) | ((pcm[pos + 1] & 0xff) << 8)
-						| ((pcm[pos + 2] & 0xff) << 16) | ((pcm[pos + 3] & 0xff) << 24));
-				pos += 4;
+				sample[i] = pcm.getFloat();
 			}
 			break;
 		default:
@@ -69,7 +62,9 @@ public class FloatPCM extends PCM<float[]> {
 	 */
 	public FloatPCM changeSampleRate(int sample) {
 		float[] samples = getSample(sample);
-		return new FloatPCM(channels, sample, 0, samples.length, samples);
+		int start = (Math.min((int)((long)this.start * sample / this.sampleRate), samples.length - 1) / channels) * channels;
+		int len = (Math.min((int)((long)this.len * sample / this.sampleRate), samples.length - start) / channels) * channels;
+		return new FloatPCM(channels, sample, start, len, samples);
 	}
 
 	/**
@@ -81,7 +76,9 @@ public class FloatPCM extends PCM<float[]> {
 	 */
 	public FloatPCM changeFrequency(float rate) {
 		float[] samples = getSample((int) (sampleRate / rate));
-		return new FloatPCM(channels, sampleRate, 0, samples.length, samples);
+		int start = (Math.min((int)((long)this.start / rate / this.sampleRate), samples.length - 1) / channels) * channels;
+		int len = (Math.min((int)((long)this.len / rate / this.sampleRate), samples.length - start) / channels) * channels;
+		return new FloatPCM(channels, sampleRate, start, len, samples);
 	}
 	
 	private float[] getSample(int sample) {
@@ -119,7 +116,7 @@ public class FloatPCM extends PCM<float[]> {
 				samples[(int) (i * channels + j)] = this.sample[(int) (i * this.channels)];
 			}
 		}
-		return new FloatPCM(channels, sampleRate, 0, samples.length, samples);
+		return new FloatPCM(channels, sampleRate, this.start * channels / this.channels , this.len  * channels / this.channels, samples);
 	}
 
 	/**
@@ -132,8 +129,8 @@ public class FloatPCM extends PCM<float[]> {
 	 * @return トリミングしたPCM
 	 */
 	public FloatPCM slice(long starttime, long duration) {
-		if (duration == 0 || starttime + duration > ((long) this.sample.length) * 1000000 / (sampleRate * channels)) {
-			duration = Math.max(((long) this.sample.length) * 1000000 / (sampleRate * channels) - starttime, 0);
+		if (duration == 0 || starttime + duration > ((long) this.len) * 1000000 / (sampleRate * channels)) {
+			duration = Math.max(((long) this.len) * 1000000 / (sampleRate * channels) - starttime, 0);
 		}
 
 		final int start = (int) ((starttime * sampleRate / 1000000) * channels);
@@ -142,7 +139,7 @@ public class FloatPCM extends PCM<float[]> {
 		while(length > channels) {
 			boolean zero = true;
 			for(int i = 0;i < channels;i++){
-				zero &= (this.sample[start + length - i - 1] == 0);
+				zero &= (this.sample[this.start + start + length - i - 1] == 0);
 			}
 			if(zero) {
 				length -= channels;
@@ -153,6 +150,6 @@ public class FloatPCM extends PCM<float[]> {
 //		if(length != orglength) {
 //			Logger.getGlobal().info("終端の無音データ除外 - " + (orglength - length) + " samples");
 //		}
-		return length > 0 ? new FloatPCM(channels, sampleRate, start, length, this.sample) : null;
+		return length > 0 ? new FloatPCM(channels, sampleRate, this.start + start, length, this.sample) : null;
 	}
 }

@@ -1,6 +1,7 @@
 package bms.player.beatoraja.audio;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 
 /**
  * 16bit short PCM
@@ -15,42 +16,33 @@ public class ShortPCM extends PCM<short[]> {
 
 	protected static ShortPCM loadPCM(PCMLoader loader) throws IOException {
 		short[] sample = null;
-		final int bytes = loader.bytes;
-		final byte[] pcm = loader.pcm;
+		final int bytes = loader.pcm.limit();
+		final ByteBuffer pcm = loader.pcm;
+		pcm.rewind();
 		
 		switch(loader.bitsPerSample) {
 		case 8:
 			sample = new short[bytes];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (short) ((((short) pcm[i]) - 128) * 256);
+				sample[i] = (short) ((((short) pcm.get()) - 128) * 256);
 			}
 			break;
 		case 16:
-			// final long time = System.nanoTime();
 			sample = new short[bytes / 2];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (short) ((pcm[i * 2] & 0xff) | (pcm[i * 2 + 1] << 8));
+				sample[i] = pcm.getShort();
 			}
-
-			// ShortBuffer shortbuf =
-			// ByteBuffer.wrap(pcm).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
-			// shortbuf.get(sample);
-			// System.out.println(p.toString() + " : " + (System.nanoTime()
-			// - time));
 			break;
 		case 24:
 			sample = new short[bytes / 3];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (short) ((pcm[i * 3 + 1] & 0xff) | (pcm[i * 3 + 2] << 8));
+				sample[i] = pcm.getShort(i * 3 + 1);
 			}
 			break;
 		case 32:
-			int pos = 0;
 			sample = new short[bytes / 4];
 			for (int i = 0; i < sample.length; i++) {
-				sample[i] = (short) (Float.intBitsToFloat((pcm[pos] & 0xff) | ((pcm[pos + 1] & 0xff) << 8)
-						| ((pcm[pos + 2] & 0xff) << 16) | ((pcm[pos + 3] & 0xff) << 24)) * Short.MAX_VALUE);
-				pos += 4;
+				sample[i] = (short) (pcm.getFloat() * Short.MAX_VALUE);
 			}
 			break;
 		default:
@@ -71,8 +63,8 @@ public class ShortPCM extends PCM<short[]> {
 	 */
 	public ShortPCM changeSampleRate(int sample) {
 		short[] samples = getSample(sample);
-		int start = Math.min((int)((long)this.start * sample / this.sampleRate), samples.length - 1);
-		int len = Math.min((int)((long)this.len * sample / this.sampleRate), samples.length - start);
+		int start = (Math.min((int)((long)this.start * sample / this.sampleRate), samples.length - 1) / channels) * channels;
+		int len = (Math.min((int)((long)this.len * sample / this.sampleRate), samples.length - start) / channels) * channels;
 		return new ShortPCM(channels, sample, start, len, samples);
 	}
 
@@ -85,8 +77,8 @@ public class ShortPCM extends PCM<short[]> {
 	 */
 	public ShortPCM changeFrequency(float rate) {
 		short[] samples = getSample((int) (sampleRate / rate));
-		int start = Math.min((int)((long)this.start / rate / this.sampleRate), samples.length - 1);
-		int len = Math.min((int)((long)this.len / rate / this.sampleRate), samples.length - start);
+		int start = (Math.min((int)((long)this.start / rate / this.sampleRate), samples.length - 1) / channels) * channels;
+		int len = (Math.min((int)((long)this.len / rate / this.sampleRate), samples.length - start) / channels) * channels;
 		return new ShortPCM(channels, sampleRate, start, len, samples);
 	}
 	
@@ -125,7 +117,7 @@ public class ShortPCM extends PCM<short[]> {
 				samples[(int) (i * channels + j)] = this.sample[(int) (i * this.channels)];
 			}
 		}
-		return new ShortPCM(channels, sampleRate, 0, samples.length, samples);
+		return new ShortPCM(channels, sampleRate, this.start * channels / this.channels , this.len  * channels / this.channels, samples);
 	}
 
 	/**
@@ -138,8 +130,8 @@ public class ShortPCM extends PCM<short[]> {
 	 * @return トリミングしたPCM
 	 */
 	public ShortPCM slice(long starttime, long duration) {
-		if (duration == 0 || starttime + duration > ((long) this.sample.length) * 1000000 / (sampleRate * channels)) {
-			duration = Math.max(((long) this.sample.length) * 1000000 / (sampleRate * channels) - starttime, 0);
+		if (duration == 0 || starttime + duration > ((long) this.len) * 1000000 / (sampleRate * channels)) {
+			duration = Math.max(((long) this.len) * 1000000 / (sampleRate * channels) - starttime, 0);
 		}
 
 		final int start = (int) ((starttime * sampleRate / 1000000) * channels);
@@ -148,7 +140,7 @@ public class ShortPCM extends PCM<short[]> {
 		while(length > channels) {
 			boolean zero = true;
 			for(int i = 0;i < channels;i++){
-				zero &= (this.sample[start + length - i - 1] == 0);
+				zero &= (this.sample[this.start + start + length - i - 1] == 0);
 			}
 			if(zero) {
 				length -= channels;
@@ -159,6 +151,6 @@ public class ShortPCM extends PCM<short[]> {
 //		if(length != orglength) {
 //			Logger.getGlobal().info("終端の無音データ除外 - " + (orglength - length) + " samples");
 //		}
-		return length > 0 ? new ShortPCM(channels, sampleRate, start, length, this.sample) : null;
+		return length > 0 ? new ShortPCM(channels, sampleRate, this.start + start, length, this.sample) : null;
 	}
 }

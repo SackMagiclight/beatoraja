@@ -2,6 +2,7 @@ package bms.player.beatoraja.audio;
 
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.ByteBuffer;
 import java.nio.file.*;
 import java.util.logging.Logger;
 
@@ -195,7 +196,7 @@ public class GdxSoundDriver extends AbstractAudioDriver<Sound> {
 		}
 	}
 
-	class SoundInstance {
+	private static class SoundInstance {
 		public Sound sound;
 		public long id = -1;
 		public int channel = -1;
@@ -331,13 +332,20 @@ public class GdxSoundDriver extends AbstractAudioDriver<Sound> {
 				short s = 0;
 				if(pcm instanceof ShortPCM) {
 					s = ((short[])pcm.sample)[(pos - 44) / 2 + pcm.start];
+					if (pos % 2 == 0) {
+						result = (s & 0x00ff);
+					} else {
+						result = ((s & 0xff00) >>> 8);
+					}
+				} else if(pcm instanceof ShortDirectPCM) {
+					result = ((ByteBuffer)pcm.sample).get(pos - 44 + pcm.start * 2) & 0xff;
 				} else if(pcm instanceof FloatPCM) {
 					s = (short) (((float[])pcm.sample)[(pos - 44) / 2 + pcm.start] * Short.MAX_VALUE);					
-				}
-				if (pos % 2 == 0) {
-					result = (s & 0x00ff);
-				} else {
-					result = ((s & 0xff00) >>> 8);
+					if (pos % 2 == 0) {
+						result = (s & 0x00ff);
+					} else {
+						result = ((s & 0xff00) >>> 8);
+					}
 				}
 				pos++;
 			}
