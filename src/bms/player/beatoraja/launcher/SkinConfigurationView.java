@@ -4,29 +4,20 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.stream.Stream;
 
 import bms.player.beatoraja.PlayerConfig;
 import bms.player.beatoraja.SkinConfig;
-import bms.player.beatoraja.launcher.PlayConfigurationView.SkinListCell;
-import bms.player.beatoraja.launcher.PlayConfigurationView.SkinTypeCell;
 import bms.player.beatoraja.skin.*;
-import bms.player.beatoraja.skin.SkinHeader.CustomFile;
-import bms.player.beatoraja.skin.SkinHeader.CustomOffset;
-import bms.player.beatoraja.skin.SkinHeader.CustomOption;
+import bms.player.beatoraja.skin.SkinHeader.*;
 import bms.player.beatoraja.skin.lr2.LR2SkinHeaderLoader;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
-import javafx.scene.control.ComboBox;
-import javafx.scene.control.Label;
-import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
-import javafx.scene.control.ScrollPane;
-import javafx.scene.control.Spinner;
+import javafx.scene.control.*;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.util.Callback;
+
+import static bms.player.beatoraja.skin.SkinProperty.*;
 
 /**
  * スキンコンフィグ
@@ -52,19 +43,31 @@ public class SkinConfigurationView implements Initializable {
 	private Map<CustomFile, ComboBox<String>> filebox = new HashMap<CustomFile, ComboBox<String>>();
 	private Map<CustomOffset, Spinner<Integer>[]> offsetbox = new HashMap<CustomOffset, Spinner<Integer>[]>();
 
+	static class SkinTypeCell extends ListCell<SkinType> {
+
+		@Override
+		protected void updateItem(SkinType arg0, boolean arg1) {
+			super.updateItem(arg0, arg1);
+			setText(arg0 != null ? arg0.getName() : "");
+		}
+	}
+
+	static class SkinListCell extends ListCell<SkinHeader> {
+
+		@Override
+		protected void updateItem(SkinHeader arg0, boolean arg1) {
+			super.updateItem(arg0, arg1);
+			setText(arg0 != null ? arg0.getName() + (arg0.getType() == SkinHeader.TYPE_BEATORJASKIN ? "" : " (LR2 Skin)") : "");
+		}
+	}
+
 	@Override
 	public void initialize(URL location, ResourceBundle resources) {
-		skincategory.setCellFactory(new Callback<ListView<SkinType>, ListCell<SkinType>>() {
-			public ListCell<SkinType> call(ListView<SkinType> param) { return new SkinTypeCell(); }
-		});
+		skincategory.setCellFactory((param) -> new SkinTypeCell());
 		skincategory.setButtonCell(new SkinTypeCell());
 		skincategory.getItems().addAll(SkinType.values());
 
-		skinheader.setCellFactory(new Callback<ListView<SkinHeader>, ListCell<SkinHeader>>() {
-			public ListCell<SkinHeader> call(ListView<SkinHeader> param) {
-				return new SkinListCell();
-			}
-		});
+		skinheader.setCellFactory((param) -> new SkinListCell());
 		skinheader.setButtonCell(new SkinListCell());
 
 		List<Path> lr2skinpaths = new ArrayList<Path>();
@@ -119,16 +122,21 @@ public class SkinConfigurationView implements Initializable {
 			HBox hbox = new HBox();
 			ComboBox<String> combo = new ComboBox<String>();
 			combo.getItems().setAll(option.contents);
+			combo.getItems().add("Random");
 			combo.getSelectionModel().select(0);
 			int selection = -1;
 			for(SkinConfig.Option o : property.getOption()) {
 				if (o.name.equals(option.name)) {
 					int i = o.value;
-					for(int index = 0;index < option.option.length;index++) {
-						if(option.option[index] == i) {
-							selection = index;
-							break;
+					if(i != OPTION_RANDOM_VALUE) {
+						for(int index = 0;index < option.option.length;index++) {
+							if(option.option[index] == i) {
+								selection = index;
+								break;
+							}
 						}
+					} else {
+						selection = combo.getItems().size() - 1;
 					}
 					break;
 				}
@@ -171,6 +179,7 @@ public class SkinConfigurationView implements Initializable {
 				for (Path p : paths) {
 					combo.getItems().add(p.getFileName().toString());
 				}
+				combo.getItems().add("Random");
 
 				String selection = null;
 				for(SkinConfig.FilePath f : property.getFile()) {
@@ -216,25 +225,15 @@ public class SkinConfigurationView implements Initializable {
 			label.setMinWidth(250.0);
 			hbox.getChildren().add(label);
 
-			int[] v = new int[values.length];
-			boolean[] b = new boolean[values.length];
+			final boolean[] b = {option.x, option.y, option.w, option.h, option.r, option.a};
+			SkinConfig.Offset offset = null;
 			for(SkinConfig.Offset o : property.getOffset()) {
 				if(o.name.equals(option.name)) {
-					v[0] = o.x;
-					v[1] = o.y;
-					v[2] = o.w;
-					v[3] = o.h;
-					v[4] = o.r;
-					v[5] = o.a;
-					b[0] = option.x;
-					b[1] = option.y;
-					b[2] = option.w;
-					b[3] = option.h;
-					b[4] = option.r;
-					b[5] = option.a;
+					offset = o;
 					break;
 				}
 			}
+			final int[] v = offset != null ? new int[]{offset.x, offset.y, offset.w, offset.h, offset.r, offset.a} : new int[values.length];
 
 			Spinner<Integer>[] spinner = new Spinner[values.length];
 			for(int i = 0;i < spinner.length;i++) {
@@ -255,11 +254,8 @@ public class SkinConfigurationView implements Initializable {
 	private void scan(Path p, final List<Path> paths) {
 		if (Files.isDirectory(p)) {
 			try (Stream<Path> sub = Files.list(p)) {
-				sub.forEach(new Consumer<Path>() {
-					@Override
-					public void accept(Path t) {
+				sub.forEach((t) -> {
 						scan(t, paths);
-					}
 				});
 			} catch (IOException e) {
 			}
@@ -282,7 +278,11 @@ public class SkinConfigurationView implements Initializable {
 				int index = optionbox.get(option).getSelectionModel().getSelectedIndex();
 				SkinConfig.Option o = new SkinConfig.Option();
 				o.name = option.name;
-				o.value = option.option[index];
+				if(index != optionbox.get(option).getItems().size() - 1) {
+					o.value = option.option[index];
+				} else {
+					o.value = OPTION_RANDOM_VALUE;
+				}
 				options.add(o);
 			}
 		}

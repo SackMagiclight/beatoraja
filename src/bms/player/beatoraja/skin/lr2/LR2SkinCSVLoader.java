@@ -228,6 +228,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		});
 
 		addCommandWord(new CommandWord("SRC_NUMBER") {
+			//#SRC_NUMBER,(NULL),gr,x,y,w,h,div_x,div_y,cycle,timer,num,align,keta,zeropadding
 			@Override
 			public void execute(String[] str) {
 				num = null;
@@ -258,7 +259,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 								}
 							}
 
-							num = new SkinNumber(pn, mn, values[10], values[9], values[13] + 1, 0, values[11]);
+							num = new SkinNumber(pn, mn, values[10], values[9], values[13] + 1, str[14].length() > 0 ? values[14] : 2, values[11]);
 							num.setAlign(values[12]);
 						} else {
 							int d = images.length % 10 == 0 ? 10 : 11;
@@ -509,6 +510,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 					button.setReferenceID(values[11]);
 					if (values[12] == 1) {
 						button.setClickevent(values[11]);
+						button.setClickeventType(values[14] > 0 ? 0 : values[14] < 0 ? 1 : 2);
 					}
 					skin.add(button);
 					// System.out.println("Object Added - " +
@@ -522,6 +524,35 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				if (button != null) {
 					int[] values = parseInt(str);
 					button.setDestination(values[2], values[3] * dstw / srcw,
+							dsth - (values[4] + values[6]) * dsth / srch, values[5] * dstw / srcw,
+							values[6] * dsth / srch, values[7], values[8], values[9], values[10], values[11],
+							values[12], values[13], values[14], values[15], values[16], values[17], values[18],
+							values[19], values[20], values[21]);
+				}
+			}
+		});
+		addCommandWord(new CommandWord("SRC_ONMOUSE") {
+			@Override
+			public void execute(String[] str) {
+				onmouse = null;
+				int gr = Integer.parseInt(str[2]);
+				if (gr < imagelist.size() && imagelist.get(gr) != null) {
+					int[] values = parseInt(str);
+					TextureRegion[] images = getSourceImage(values);
+					if (images != null) {
+						onmouse = new SkinImage(images, values[10], values[9]);
+						skin.setMouseRect(onmouse, values[12], values[6] - values[13] - values[15], values[14], values[15]);
+						skin.add(onmouse);
+					}
+				}
+			}
+		});
+		addCommandWord(new CommandWord("DST_ONMOUSE") {
+			@Override
+			public void execute(String[] str) {
+				if (onmouse != null) {
+					int[] values = parseInt(str);
+					onmouse.setDestination(values[2], values[3] * dstw / srcw,
 							dsth - (values[4] + values[6]) * dsth / srch, values[5] * dstw / srcw,
 							values[6] * dsth / srch, values[7], values[8], values[9], values[10], values[11],
 							values[12], values[13], values[14], values[15], values[16], values[17], values[18],
@@ -680,6 +711,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 
 	SkinImage part = null;
 	SkinImage button = null;
+	SkinImage onmouse = null;
 	SkinGraph bar = null;
 	SkinSlider slider = null;
 	SkinNumber num = null;
@@ -759,10 +791,46 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 	public S loadSkin(File f, MainState decide, SkinHeader header, Map<Integer, Boolean> option, SkinConfig.Property property) throws IOException {
 		Map m = new HashMap();
 		for(SkinConfig.Option op : property.getOption()) {
-			m.put(op.name, op.value);
+			if(op.value != OPTION_RANDOM_VALUE) {
+				m.put(op.name, op.value);
+			} else {
+				for (CustomOption opt : header.getCustomOptions()) {
+					if(op.name.equals(opt.name)) {
+						if(header.getRandomSelectedOptions(op.name) >= 0) m.put(op.name, header.getRandomSelectedOptions(op.name));
+					}
+				}
+			}
 		}
 		for(SkinConfig.FilePath file : property.getFile()) {
-			m.put(file.name, file.path);
+			if(!file.path.equals("Random")) {
+				m.put(file.name, file.path);
+			} else {
+				for (CustomFile cf : header.getCustomFiles()) {
+					if(file.name.equals(cf.name)) {
+						String ext = cf.path.substring(cf.path.lastIndexOf("*") + 1);
+						if(cf.path.contains("|")) {
+							if(cf.path.length() > cf.path.lastIndexOf('|') + 1) {
+								ext = cf.path.substring(cf.path.lastIndexOf("*") + 1, cf.path.indexOf('|')) + cf.path.substring(cf.path.lastIndexOf('|') + 1);
+							} else {
+								ext = cf.path.substring(cf.path.lastIndexOf("*") + 1, cf.path.indexOf('|'));
+							}
+						}
+						File dir = new File(cf.path.substring(0, cf.path.lastIndexOf('/')));
+						if (dir.exists() && dir.isDirectory()) {
+							List<File> l = new ArrayList<File>();
+							for (File subfile : dir.listFiles()) {
+								if (subfile.getPath().toLowerCase().endsWith(ext)) {
+									l.add(subfile);
+								}
+							}
+							if (l.size() > 0) {
+								String filename = l.get((int) (Math.random() * l.size())).getName();
+								m.put(file.name, filename);
+							}
+						}
+					}
+				}
+			}
 		}
 		for(SkinConfig.Offset offset : property.getOffset()) {
 			m.put(offset.name, offset);
@@ -789,6 +857,9 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		case COURSE_RESULT:
 			return new LR2CourseResultSkinLoader(src, c);
 		case KEY_CONFIG:
+			return null;
+		case SKIN_SELECT:
+			return new LR2SkinSelectSkinLoader(src, c);
 		}
 		return null;
 	}

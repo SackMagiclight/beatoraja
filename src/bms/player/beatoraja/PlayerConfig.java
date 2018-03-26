@@ -7,9 +7,12 @@ import java.nio.file.*;
 import java.util.*;
 import java.util.logging.Logger;
 
+import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.skin.SkinType;
 
 import bms.model.Mode;
+
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Json;
 import com.badlogic.gdx.utils.JsonWriter;
 
@@ -43,17 +46,6 @@ public class PlayerConfig {
 	 */
 	private int doubleoption;
 
-	/**
-	 * ハイスピード固定。固定する場合はデュレーションが有効となり、固定しない場合はハイスピードが有効になる
-	 */
-	private int fixhispeed = FIX_HISPEED_MAINBPM;
-
-	public static final int FIX_HISPEED_OFF = 0;
-	public static final int FIX_HISPEED_STARTBPM = 1;
-	public static final int FIX_HISPEED_MAXBPM = 2;
-	public static final int FIX_HISPEED_MAINBPM = 3;
-	public static final int FIX_HISPEED_MINBPM = 4;
-
 	private int target;
 	/**
 	 * 判定タイミング
@@ -70,6 +62,10 @@ public class PlayerConfig {
 	private int misslayerDuration = 500;
 	
 	/**
+	 * LNモード
+	 */
+	private int lnmode = 0;
+	/**
 	 * アシストオプション:コンスタント
 	 */
 	private boolean constant = false;
@@ -78,10 +74,6 @@ public class PlayerConfig {
 	 */
 	private boolean legacynote = false;
 	/**
-	 * LNモード
-	 */
-	private int lnmode = 0;
-	/**
 	 * アシストオプション:判定拡大
 	 */
 	private int judgewindowrate = 100;
@@ -89,7 +81,6 @@ public class PlayerConfig {
 	 * アシストオプション:地雷除去
 	 */
 	private boolean nomine = false;
-
 	/**
 	 * アシストオプション:BPMガイド
 	 */
@@ -103,7 +94,6 @@ public class PlayerConfig {
 	 * H-RANDOM連打しきい値BPM
 	 */
 	private int hranThresholdBPM = 120;
-	
 	/**
 	 * 途中閉店の有無
 	 */
@@ -126,16 +116,19 @@ public class PlayerConfig {
 
 	private SkinConfig[] skin = new SkinConfig[SkinType.getMaxSkinTypeID() + 1];
 
-	private PlayConfig mode7 = new PlayConfig(Mode.BEAT_7K);
+	private PlayModeConfig mode7 = new PlayModeConfig(Mode.BEAT_7K);
 
-	private PlayConfig mode14 = new PlayConfig(Mode.BEAT_14K);
+	private PlayModeConfig mode14 = new PlayModeConfig(Mode.BEAT_14K);
 
-	private PlayConfig mode9 = new PlayConfig(Mode.POPN_9K);
+	private PlayModeConfig mode9 = new PlayModeConfig(Mode.POPN_9K);
 
-	private PlayConfig mode24 = new PlayConfig(Mode.KEYBOARD_24K);
+	private PlayModeConfig mode24 = new PlayModeConfig(Mode.KEYBOARD_24K);
 
-	private PlayConfig mode24double = new PlayConfig(Mode.KEYBOARD_24K_DOUBLE);
+	private PlayModeConfig mode24double = new PlayModeConfig(Mode.KEYBOARD_24K_DOUBLE);
 
+	/**
+	 * 選曲時でのキー入力方式
+	 */
 	private int musicselectinput = 0;
 
 	private String irname = "";
@@ -146,6 +139,10 @@ public class PlayerConfig {
 	
 	private int irsend = 0;
 	
+	public static final int IR_SEND_ALWAYS = 0;
+	public static final int IR_SEND_COMPLETE_SONG = 1;
+	public static final int IR_SEND_UPDATE_SCORE = 2;
+
 	private String twitterConsumerKey;
 
 	private String twitterConsumerSecret;
@@ -154,11 +151,8 @@ public class PlayerConfig {
 
 	private String twitterAccessTokenSecret;
 	
-	public static final int IR_SEND_ALWAYS = 0;
-	public static final int IR_SEND_COMPLETE_SONG = 1;
-	public static final int IR_SEND_UPDATE_SCORE = 2;
-
 	public PlayerConfig() {
+		validate();
 	}
 	
     public String getName() {
@@ -183,17 +177,6 @@ public class PlayerConfig {
 
 	public void setRandom(int random) {
 		this.random = random;
-	}
-
-	public int getFixhispeed() {
-		if(fixhispeed < 0 || fixhispeed > FIX_HISPEED_MINBPM) {
-			fixhispeed = FIX_HISPEED_OFF;
-		}
-		return fixhispeed;
-	}
-
-	public void setFixhispeed(int fixhispeed) {
-		this.fixhispeed = fixhispeed;
 	}
 
 	public int getJudgetiming() {
@@ -284,7 +267,7 @@ public class PlayerConfig {
 		this.markprocessednote = markprocessednote;
 	}
 
-	public PlayConfig getPlayConfig(Mode modeId) {
+	public PlayModeConfig getPlayConfig(Mode modeId) {
 		switch (modeId) {
 		case BEAT_5K:
 		case BEAT_7K:
@@ -303,7 +286,7 @@ public class PlayerConfig {
 		}
 	}
 
-	public PlayConfig getPlayConfig(int modeId) {
+	public PlayModeConfig getPlayConfig(int modeId) {
 		switch (modeId) {
 		case 7:
 		case 5:
@@ -322,51 +305,51 @@ public class PlayerConfig {
 		}
 	}
 
-	public PlayConfig getMode7() {
+	public PlayModeConfig getMode7() {
 		return mode7;
 	}
 
-	public void setMode7(PlayConfig mode7) {
+	public void setMode7(PlayModeConfig mode7) {
 		this.mode7 = mode7;
 	}
 
-	public PlayConfig getMode14() {
+	public PlayModeConfig getMode14() {
 		if(mode14 == null || mode14.getController().length < 2) {
-			mode14 = new PlayConfig(Mode.BEAT_14K);
+			mode14 = new PlayModeConfig(Mode.BEAT_14K);
 			Logger.getGlobal().warning("mode14のPlayConfigを再構成");
 		}
 		return mode14;
 	}
 
-	public void setMode14(PlayConfig mode14) {
+	public void setMode14(PlayModeConfig mode14) {
 		this.mode14 = mode14;
 	}
 
-	public PlayConfig getMode9() {
+	public PlayModeConfig getMode9() {
 		return mode9;
 	}
 
-	public void setMode9(PlayConfig mode9) {
+	public void setMode9(PlayModeConfig mode9) {
 		this.mode9 = mode9;
 	}
 
-	public PlayConfig getMode24() {
+	public PlayModeConfig getMode24() {
 		return mode24;
 	}
 
-	public void setMode24(PlayConfig mode24) {
+	public void setMode24(PlayModeConfig mode24) {
 		this.mode24 = mode24;
 	}
 
-	public PlayConfig getMode24double() {
+	public PlayModeConfig getMode24double() {
 		if(mode24double == null || mode24double.getController().length < 2) {
-			mode24double = new PlayConfig(Mode.KEYBOARD_24K_DOUBLE);
+			mode24double = new PlayModeConfig(Mode.KEYBOARD_24K_DOUBLE);
 			Logger.getGlobal().warning("mode24doubleのPlayConfigを再構成");
 		}
 		return mode24double;
 	}
 
-	public void setMode24double(PlayConfig mode24double) {
+	public void setMode24double(PlayModeConfig mode24double) {
 		this.mode24double = mode24double;
 	}
 
@@ -533,11 +516,55 @@ public class PlayerConfig {
 	}
 
 	public void validate() {
+		if(skin == null) {
+			skin = new SkinConfig[SkinType.getMaxSkinTypeID() + 1];
+		}
+		if(skin.length != SkinType.getMaxSkinTypeID() + 1) {
+			skin = Arrays.copyOf(skin, SkinType.getMaxSkinTypeID() + 1);
+		}
+		for(int i = 0;i < skin.length;i++) {
+			if(skin[i] == null) {
+				skin[i] = SkinConfig.getDefault(i);
+			}
+			skin[i].validate();
+		}
+
+		if(mode7 == null) {
+			mode7 = new PlayModeConfig(Mode.BEAT_7K);
+		}
+		if(mode14 == null) {
+			mode14 = new PlayModeConfig(Mode.BEAT_14K);
+		}
+		if(mode9 == null) {
+			mode9 = new PlayModeConfig(Mode.POPN_9K);			
+		}
+		if(mode24 == null) {
+			mode24 = new PlayModeConfig(Mode.KEYBOARD_24K);
+		}
+		if(mode24double == null) {
+			mode24double = new PlayModeConfig(Mode.KEYBOARD_24K_DOUBLE);
+		}
 		mode7.validate(9);
 		mode14.validate(18);
 		mode9.validate(9);
 		mode24.validate(26);
 		mode24double.validate(52);
+		
+		gauge = MathUtils.clamp(gauge, 0, 5);
+		random = MathUtils.clamp(random, 0, 9);
+		random2 = MathUtils.clamp(random2, 0, 9);
+		doubleoption = MathUtils.clamp(doubleoption, 0, 3);
+		target = MathUtils.clamp(target, 0, TargetProperty.getAllTargetProperties().length);
+		judgetiming = MathUtils.clamp(judgetiming, -100, 100);
+		misslayerDuration = MathUtils.clamp(misslayerDuration, 0, 5000);
+		lnmode = MathUtils.clamp(lnmode, 0, 2);
+		judgewindowrate = MathUtils.clamp(judgewindowrate, 10, 400);
+		hranThresholdBPM = MathUtils.clamp(hranThresholdBPM, 1, 1000);
+		sevenToNinePattern = MathUtils.clamp(sevenToNinePattern, 0, 6);
+		sevenToNineType = MathUtils.clamp(sevenToNineType, 0, 2);
+		
+		irsend = MathUtils.clamp(irsend, 0, 2);
+
 	}
 
 	public static void init(Config config) {

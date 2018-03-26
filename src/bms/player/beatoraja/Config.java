@@ -1,8 +1,15 @@
 package bms.player.beatoraja;
 
-import java.util.Map;
+import java.io.FileReader;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.util.Arrays;
 import bms.player.beatoraja.play.JudgeAlgorithm;
-import bms.player.beatoraja.skin.SkinType;
+import com.badlogic.gdx.math.MathUtils;
+import com.badlogic.gdx.utils.Json;
+import com.badlogic.gdx.utils.JsonWriter.OutputType;
+
 import static bms.player.beatoraja.Resolution.*;
 
 /**
@@ -11,8 +18,6 @@ import static bms.player.beatoraja.Resolution.*;
  * @author exch
  */
 public class Config {
-
-	// TODO プレイヤー毎に異なる見込みの大きい要素をPlayerConfigに移動
 
 	private String playername;
 
@@ -121,7 +126,6 @@ public class Config {
 
 	private String soundpath = "";
 
-	private SkinConfig[] skin;
 	/**
 	 * BMSルートディレクトリパス
 	 */
@@ -129,7 +133,7 @@ public class Config {
 	/**
 	 * 難易度表URL
 	 */
-	private String[] tableURL = new String[0];
+	private String[] tableURL = DEFAULT_TABLEURL;
 	/**
 	 * BGA表示
 	 */
@@ -150,33 +154,26 @@ public class Config {
 	private boolean updatesong = false;
 
 	private int autosavereplay[] = {0,0,0,0};
-	
+
 	private int skinPixmapGen = 4;
 	private int bannerPixmapGen = 2;
+	private int songResourceGen = 1;
+
+	private static final String[] DEFAULT_TABLEURL = { "http://bmsnormal2.syuriken.jp/table.html",
+			"http://bmsnormal2.syuriken.jp/table_insane.html",
+			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=easy",
+			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=normal",
+			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=hard",
+			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=fc",
+			"http://dpbmsdelta.web.fc2.com/table/dpdelta.html",
+			"http://dpbmsdelta.web.fc2.com/table/insane.html",
+			"http://flowermaster.web.fc2.com/lrnanido/gla/LN.html",
+			"http://stellawingroad.web.fc2.com/new/pms.html",
+			"http://sky.geocities.jp/exclusion_bms/table24k/table.html",
+	};
 
 	public Config() {
-		tableURL = new String[] { "http://bmsnormal2.syuriken.jp/table.html",
-				"http://bmsnormal2.syuriken.jp/table_insane.html",
-				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=easy",
-				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=normal",
-				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=hard",
-				"http://walkure.net/hakkyou/for_glassist/bms/?lamp=fc",
-				"http://dpbmsdelta.web.fc2.com/table/dpdelta.html",
-				"http://dpbmsdelta.web.fc2.com/table/insane.html",
-				"http://flowermaster.web.fc2.com/lrnanido/gla/LN.html",
-				"http://stellawingroad.web.fc2.com/new/pms.html",
-				"http://sky.geocities.jp/exclusion_bms/table24k/table.html",
-		};
-		int maxSkinType = 0;
-		for (SkinType type : SkinType.values()) {
-			if (type.getId() > maxSkinType) {
-				maxSkinType = type.getId();
-			}
-		}
-		skin = new SkinConfig[maxSkinType + 1];
-		for (Map.Entry<SkinType, String> entry : SkinConfig.defaultSkinPathMap.entrySet()) {
-			skin[entry.getKey().getId()] = new SkinConfig(entry.getValue());
-		}
+		validate();
 	}
 
 	public String getPlayername() {
@@ -464,6 +461,86 @@ public class Config {
 
 	public void setBannerPixmapGen(int bannerPixmapGen) {
 		this.bannerPixmapGen = bannerPixmapGen;
+	}
+
+	public int getSongResourceGen() {
+		return songResourceGen;
+	}
+
+	public void setSongResourceGen(int songResourceGen) {
+		this.songResourceGen = songResourceGen;
+	}
+
+	public void validate() {
+		if(displaymode == null) {
+			displaymode = DisplayMode.WINDOW;
+		}
+		if(resolution == null) {
+			resolution = Resolution.HD;
+		}
+		audioDriver = MathUtils.clamp(audioDriver, 0, 2);
+		audioDeviceBufferSize = MathUtils.clamp(audioDeviceBufferSize, 4, 4096);
+		audioDeviceSimultaneousSources = MathUtils.clamp(audioDeviceSimultaneousSources, 16, 1024);
+		audioFreqOption = MathUtils.clamp(audioFreqOption, 0, AUDIO_PLAY_SPEED);
+		audioFastForward = MathUtils.clamp(audioFastForward, 0, AUDIO_PLAY_SPEED);
+		systemvolume = MathUtils.clamp(systemvolume, 0f, 1f);
+		keyvolume = MathUtils.clamp(keyvolume, 0f, 1f);
+		bgvolume = MathUtils.clamp(bgvolume, 0f, 1f);
+		maxFramePerSecond = MathUtils.clamp(maxFramePerSecond, 0, 10000);
+		inputduration = MathUtils.clamp(inputduration, 0, 100);
+		scrolldurationlow = MathUtils.clamp(scrolldurationlow, 2, 1000);
+		scrolldurationhigh = MathUtils.clamp(scrolldurationhigh, 1, 1000);
+
+		if(JudgeAlgorithm.getIndex(judgeType) == -1) {
+			judgeType = JudgeAlgorithm.Combo.name();
+		}
+		if(bmsroot == null) {
+			bmsroot = new String[0];
+		}
+		if(tableURL == null) {
+			tableURL = DEFAULT_TABLEURL;
+		}
+
+		bga = MathUtils.clamp(bga, 0, 2);
+		bgaExpand = MathUtils.clamp(bgaExpand, 0, 2);
+		if(autosavereplay == null) {
+			autosavereplay = new int[4];
+		}
+		if(autosavereplay.length != 4) {
+			autosavereplay = Arrays.copyOf(autosavereplay, 4);
+		}
+	}
+
+	public static Config read() {
+		Config config = null;
+		if (Files.exists(MainController.configpath)) {
+			Json json = new Json();
+			try {
+				json.setIgnoreUnknownFields(true);
+				config = json.fromJson(Config.class, new FileReader(MainController.configpath.toFile()));
+			} catch (Exception e) {
+				e.printStackTrace();
+			}
+		}
+		if(config == null) {
+			config = new Config();
+		}
+		config.validate();
+
+		PlayerConfig.init(config);
+
+		return config;
+	}
+	
+	public static void write(Config config) {
+		Json json = new Json();
+		json.setOutputType(OutputType.json);
+		try (FileWriter fw = new FileWriter(MainController.configpath.toFile())) {
+			fw.write(json.prettyPrint(config));
+			fw.flush();
+		} catch (IOException e) {
+			e.printStackTrace();
+		}
 	}
 
 	public enum DisplayMode {

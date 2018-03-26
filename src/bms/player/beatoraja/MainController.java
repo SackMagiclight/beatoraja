@@ -16,6 +16,7 @@ import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
+import bms.player.beatoraja.config.SkinConfiguration;
 import org.lwjgl.input.Mouse;
 
 import com.badlogic.gdx.ApplicationAdapter;
@@ -94,6 +95,7 @@ public class MainController extends ApplicationAdapter {
 	private MusicResult result;
 	private CourseResult gresult;
 	private KeyConfiguration keyconfig;
+	private SkinConfiguration skinconfig;
 
 	private AudioDriver audio;
 
@@ -248,6 +250,7 @@ public class MainController extends ApplicationAdapter {
 	public static final int STATE_RESULT = 3;
 	public static final int STATE_GRADE_RESULT = 4;
 	public static final int STATE_CONFIG = 5;
+	public static final int STATE_SKIN_SELECT = 6;
 
 	public void changeState(int state) {
 		MainState newState = null;
@@ -277,6 +280,9 @@ public class MainController extends ApplicationAdapter {
 			break;
 		case STATE_CONFIG:
 			newState = keyconfig;
+			break;
+		case STATE_SKIN_SELECT:
+			newState = skinconfig;
 			break;
 		}
 
@@ -317,10 +323,10 @@ public class MainController extends ApplicationAdapter {
 		input = new BMSPlayerInputProcessor(config, player);
 		switch(config.getAudioDriver()) {
 		case Config.AUDIODRIVER_SOUND:
-			audio = new GdxSoundDriver();
+			audio = new GdxSoundDriver(config);
 			break;
 		case Config.AUDIODRIVER_AUDIODEVICE:
-			audio = new GdxAudioDeviceDriver();
+			audio = new GdxAudioDeviceDriver(config);
 			break;
 		}
 
@@ -330,6 +336,7 @@ public class MainController extends ApplicationAdapter {
 		result = new MusicResult(this);
 		gresult = new CourseResult(this);
 		keyconfig = new KeyConfiguration(this);
+		skinconfig = new SkinConfiguration(this);
 		if (bmsfile != null) {
 			if(resource.setBMSFile(bmsfile, auto)) {
 				changeState(STATE_PLAYBMS);
@@ -438,10 +445,12 @@ public class MainController extends ApplicationAdapter {
 					config.getResolution().height - 2);
 			sprite.end();
 		} else if(updateSong != null && updateSong.isAlive()) {
-			sprite.begin();
-			updatefont.setColor(0,1,1,0.5f + (System.currentTimeMillis() % 750) / 1000.0f);
-			updatefont.draw(sprite, updateSong.message, 100, config.getResolution().height - 2);
-			sprite.end();
+			if(currentState instanceof MusicSelector) {
+				sprite.begin();
+				updatefont.setColor(0,1,1,0.5f + (System.currentTimeMillis() % 750) / 1000.0f);
+				updatefont.draw(sprite, updateSong.message, 100, config.getResolution().height - 2);
+				sprite.end();
+			}
 		}
 
 		final long time = System.currentTimeMillis();
@@ -464,7 +473,7 @@ public class MainController extends ApplicationAdapter {
             	input.setMouseMoved(false);
             	mouseMovedTime = time;
 			}
-			Mouse.setGrabbed(current == bmsplayer && time > mouseMovedTime + 5000);
+			Mouse.setGrabbed(current == bmsplayer && time > mouseMovedTime + 5000 && Mouse.isInsideWindow());
 
 			// FPS表示切替
             if (input.getFunctionstate()[0] && input.getFunctiontime()[0] != 0) {
@@ -542,6 +551,9 @@ public class MainController extends ApplicationAdapter {
 		if (keyconfig != null) {
 			keyconfig.dispose();
 		}
+		if (skinconfig != null) {
+			skinconfig.dispose();
+		}
 		resource.dispose();
 //		input.dispose();
 		SkinLoader.getResource().dispose();
@@ -564,24 +576,9 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void saveConfig(){
-		Json json = new Json();
-		json.setOutputType(OutputType.json);
-		try (FileWriter fw = new FileWriter(configpath.toFile())) {
-			fw.write(json.prettyPrint(config));
-			fw.flush();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		Logger.getGlobal().info("設定情報をconfig.jsonに保存");
-
-		Path p = Paths.get("player/" + config.getPlayername() + "/config.json");
-		try (FileWriter fw = new FileWriter(p.toFile())) {
-			fw.write(json.prettyPrint(player));
-			fw.flush();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-		Logger.getGlobal().info("設定情報を" + p.toString() + "に保存");
+		Config.write(config);
+		PlayerConfig.write(player);
+		Logger.getGlobal().info("設定情報を保存");
 	}
 
 	public void exit() {
@@ -755,6 +752,8 @@ public class MainController extends ApplicationAdapter {
 				stateName += " " + getRankTypeName();
 			} else if(currentState instanceof KeyConfiguration) {
 				stateName = "_Config";
+			} else if(currentState instanceof SkinConfiguration) {
+				stateName = "_Skin_Select";
 			}
 			stateName = stateName.replace("\\", "￥").replace("/", "／").replace(":", "：").replace("*", "＊").replace("?", "？").replace("\"", "”").replace("<", "＜").replace(">", "＞").replace("|", "｜").replace("\t", " ");
 
@@ -836,6 +835,8 @@ public class MainController extends ApplicationAdapter {
 				builder.append(" ");
 				builder.append(getRankTypeName());
 			} else if(currentState instanceof KeyConfiguration) {
+				// empty
+			} else if(currentState instanceof SkinConfiguration) {
 				// empty
 			}
 			text = builder.toString();

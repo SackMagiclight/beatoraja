@@ -8,11 +8,7 @@ import com.badlogic.gdx.graphics.Color;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Rectangle;
-import com.badlogic.gdx.utils.Disposable;
-
-import java.util.*;
-
-import com.badlogic.gdx.utils.IntSet;
+import com.badlogic.gdx.utils.*;
 
 /**
  * スキンオブジェクト
@@ -60,9 +56,21 @@ public abstract class SkinObject implements Disposable {
 	 */
 	private int clickevent = -1;
 	/**
+	 * オブジェクトクリック判定・イベント引数の種類
+	 * 0: 通常(plus only)
+	 * 1: 通常(minus only)
+	 * 2: 左右分割(左=minus,右=plus)
+	 * 3: 上下分割(下=minus,上=plus)
+	 */
+	private int clickeventType = 0;
+	/**
 	 * 描画条件となるオプション定義
 	 */
 	private int[] dstop = new int[0];
+	/**
+	 * 描画条件のマウス範囲
+	 */
+	private Rectangle mouseRect = null;
 	/**
 	 * 画像の伸縮方法の指定
 	 */
@@ -94,12 +102,20 @@ public abstract class SkinObject implements Disposable {
 		public final int id;
 	}
 
-	private final float[] CENTERX = { 0.5f, 0, 0.5f, 1, 0, 0.5f, 1, 0, 0.5f, 1, };
-	private final float[] CENTERY = { 0.5f, 0, 0, 0, 0.5f, 0.5f, 0.5f, 1, 1, 1 };
+	private static final float[] CENTERX = { 0.5f, 0, 0.5f, 1, 0, 0.5f, 1, 0, 0.5f, 1, };
+	private static final float[] CENTERY = { 0.5f, 0, 0, 0, 0.5f, 0.5f, 0.5f, 1, 1, 1 };
 
+	/**
+	 * 回転中心のX座標(左端:0.0 - 右端:1.0)
+	 */
 	private float centerx;
+	/**
+	 * 回転中心のY座標(下端:0.0 - 上端:1.0)
+	 */
 	private float centery;
-
+	/**
+	 * 描画先
+	 */
 	private SkinObjectDestination[] dst = new SkinObjectDestination[0];
 	
 	// 以下、高速化用
@@ -179,31 +195,27 @@ public abstract class SkinObject implements Disposable {
 			dstloop = loop;
 		}
 		if (dstop.length == 0) {
-			List<Integer> l = new ArrayList<Integer>();
+			IntSet l = new IntSet();
 			for(int i : op) {
 				if(i != 0) {
 					l.add(i);
 				}
 			}
-			op = new int[l.size()];
-			for (int i = 0; i < l.size(); i++) {
-				op[i] = l.get(i);
-			}
-			dstop = op;
+			dstop = l.iterator().toArray().toArray();
 		}
 		for (int i = 0; i < dst.length; i++) {
 			if (dst[i].time > time) {
-				List<SkinObjectDestination> l = new ArrayList<SkinObjectDestination>(Arrays.asList(dst));
-				l.add(i, obj);
-				dst = l.toArray(new SkinObjectDestination[l.size()]);
+				Array<SkinObjectDestination> l = new Array<SkinObjectDestination>(dst);
+				l.insert(i, obj);
+				dst = l.toArray(SkinObjectDestination.class);
 				starttime = dst[0].time;
 				endtime = dst[dst.length - 1].time;
 				return;
 			}
 		}
-		List<SkinObjectDestination> l = new ArrayList<SkinObjectDestination>(Arrays.asList(dst));
+		Array<SkinObjectDestination> l = new Array<SkinObjectDestination>(dst);
 		l.add(obj);
-		dst = l.toArray(new SkinObjectDestination[l.size()]);
+		dst = l.toArray(SkinObjectDestination.class);
 		starttime = dst[0].time;
 		endtime = dst[dst.length - 1].time;
 	}
@@ -424,13 +436,17 @@ public abstract class SkinObject implements Disposable {
 
 	public abstract void draw(SkinObjectRenderer sprite, long time, MainState state);
 
-	protected void draw(SkinObjectRenderer sprite, TextureRegion image, float x, float y, float width, float height) {
-		draw(sprite, image, x, y, width, height, getColor(), getAngle());
+	protected void draw(SkinObjectRenderer sprite, TextureRegion image, float x, float y, float width, float height, MainState state) {
+		draw(sprite, image, x, y, width, height, getColor(), getAngle(), state);
 	}
 
 	protected void draw(SkinObjectRenderer sprite, TextureRegion image, float x, float y, float width, float height,
-			Color color, int angle) {
+			Color color, int angle, MainState state) {
 		if (color == null || color.a == 0f || image == null) {
+			return;
+		}
+		if (mouseRect != null && !mouseRect.contains(state.main.getInputProcessor().getMouseX() - x,
+				state.main.getInputProcessor().getMouseY() - y)) {
 			return;
 		}
 		tmpRect.set(x, y, width, height);
@@ -548,9 +564,31 @@ public abstract class SkinObject implements Disposable {
 			// System.out.println(obj.getClickevent() + " : " + r.x +
 			// "," + r.y + "," + r.width + "," + r.height + " - " + x +
 			// "," + y);
-			if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
-				state.executeClickEvent(clickevent);
-				return true;
+			switch (clickeventType) {
+			case 0:
+				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
+					state.executeClickEvent(clickevent, 1);
+					return true;
+				}
+				break;
+			case 1:
+				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
+					state.executeClickEvent(clickevent, -1);
+					return true;
+				}
+				break;
+			case 2:
+				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
+					state.executeClickEvent(clickevent, x >= r.x + r.width/2 ? 1 : -1);
+					return true;
+				}
+				break;
+			case 3:
+				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
+					state.executeClickEvent(clickevent, y >= r.y + r.height/2 ? 1 : -1);
+					return true;
+				}
+				break;
 			}
 		}
 		return false;
@@ -562,6 +600,14 @@ public abstract class SkinObject implements Disposable {
 
 	public void setClickevent(int clickevent) {
 		this.clickevent = clickevent;
+	}
+
+	public int getClickeventType() {
+		return clickeventType;
+	}
+
+	public void setClickeventType(int clickeventType) {
+		this.clickeventType = clickeventType;
 	}
 
 	public boolean isRelative() {
@@ -597,6 +643,11 @@ public abstract class SkinObject implements Disposable {
 		}
 	}
 	
+	/**
+	 * オフセット
+	 * 
+	 * @author exch
+	 */
 	public static class SkinOffset {
 		public float x;
 		public float y;
@@ -617,6 +668,9 @@ public abstract class SkinObject implements Disposable {
 	}
 
 	public void setOffsetID(int[] offset) {
+		if(this.offset.length > 0) {
+			return;
+		}
 		IntSet a = new IntSet(offset.length);
 		for(int o : offset) {
 			if(o > 0 && o < SkinProperty.OFFSET_MAX + 1) {
@@ -666,4 +720,7 @@ public abstract class SkinObject implements Disposable {
 		dstfilter = filter;
 	}
 
+	public void setMouseRect(float x2, float y2, float w2, float h2) {
+		this.mouseRect = new Rectangle(x2, y2, w2, h2);
+	}
 }

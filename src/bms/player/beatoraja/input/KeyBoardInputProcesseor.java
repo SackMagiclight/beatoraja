@@ -2,7 +2,7 @@ package bms.player.beatoraja.input;
 
 import java.util.Arrays;
 
-import bms.player.beatoraja.PlayConfig.KeyboardConfig;
+import bms.player.beatoraja.PlayModeConfig.KeyboardConfig;
 import bms.player.beatoraja.Resolution;
 import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.InputProcessor;
@@ -181,8 +181,10 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 		}
 	}
 
-	public boolean mouseMoved(int arg0, int arg1) {
+	public boolean mouseMoved(int x, int y) {
 		this.bmsPlayerInputProcessor.setMouseMoved(true);
+		this.bmsPlayerInputProcessor.mousex = x * resolution.width / Gdx.graphics.getWidth();
+		this.bmsPlayerInputProcessor.mousey = resolution.height - y * resolution.height / Gdx.graphics.getHeight();
 		return false;
 	}
 

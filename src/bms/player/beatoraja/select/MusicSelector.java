@@ -74,7 +74,7 @@ public class MusicSelector extends MainState {
 	/**
 	 * 楽曲が選択されてからbmsを読み込むまでの時間(ms)
 	 */
-	private final int notesGraphDuration = 1000;
+	private final int notesGraphDuration = 350;
 	/**
 	 * 楽曲が選択されてからプレビュー曲を再生するまでの時間(ms)
 	 */
@@ -221,6 +221,7 @@ public class MusicSelector extends MainState {
 		setSound(SOUND_CHANGEOPTION, "o-change.wav", SoundType.SOUND,false);
 
 		play = null;
+		showNoteGraph = false;
 		playerdata = main.getPlayDataAccessor().readPlayerData();
 		if (bar.getSelected() != null && bar.getSelected() instanceof SongBar) {
 			scorecache.update(((SongBar) bar.getSelected()).getSongData(), config.getLnmode());
@@ -231,7 +232,7 @@ public class MusicSelector extends MainState {
 		preview.start(null);
 
 		final BMSPlayerInputProcessor input = main.getInputProcessor();
-		PlayConfig pc = (config.getMusicselectinput() == 0 ? config.getMode7()
+		PlayModeConfig pc = (config.getMusicselectinput() == 0 ? config.getMode7()
 				: (config.getMusicselectinput() == 1 ? config.getMode9() : config.getMode14()));
 		input.setKeyboardConfig(pc.getKeyboardConfig());
 		input.setControllerConfig(pc.getController());
@@ -260,6 +261,9 @@ public class MusicSelector extends MainState {
         if(main.getNowTime() > getSkin().getInput()){
         	main.switchTimer(TIMER_STARTINPUT, true);
         }
+		if(main.getNowTime(TIMER_SONGBAR_CHANGE) < 0) {
+			main.setTimerOn(TIMER_SONGBAR_CHANGE);
+		}
 		// draw song information
 		resource.setSongdata(current instanceof SongBar ? ((SongBar) current).getSongData() : null);
 
@@ -341,6 +345,9 @@ public class MusicSelector extends MainState {
 		if (input.getNumberState()[6]) {
 			preview.stop();
 			main.changeState(MainController.STATE_CONFIG);
+		} else if (input.getFunctionstate()[11]) {
+			preview.stop();
+			main.changeState(MainController.STATE_SKIN_SELECT);
 		}
 
 		musicinput.input();
@@ -528,17 +535,17 @@ public class MusicSelector extends MainState {
 		case NUMBER_DURATION:
 			if (bar.getSelected() instanceof SongBar && ((SongBar) bar.getSelected()).existsSong()) {
 				SongBar song = (SongBar) bar.getSelected();
-				PlayConfig pc = config.getPlayConfig(song.getSongData().getMode());
+				PlayConfig pc = config.getPlayConfig(song.getSongData().getMode()).getPlayconfig();
 				return pc.getDuration();
 			}
-			return config.getMode7().getDuration();
+			return config.getMode7().getPlayconfig().getDuration();
 		case NUMBER_DURATION_GREEN:
 			if (bar.getSelected() instanceof SongBar && ((SongBar) bar.getSelected()).existsSong()) {
 				SongBar song = (SongBar) bar.getSelected();
-				PlayConfig pc = config.getPlayConfig(song.getSongData().getMode());
+				PlayConfig pc = config.getPlayConfig(song.getSongData().getMode()).getPlayconfig();
 				return pc.getDuration() * 3 / 5;
 			}
-			return config.getMode7().getDuration() * 3 / 5;
+			return config.getMode7().getPlayconfig().getDuration() * 3 / 5;
 		case NUMBER_JUDGETIMING:
 			return config.getJudgetiming();
 		}
@@ -846,7 +853,7 @@ public class MusicSelector extends MainState {
 		return super.getImageIndex(id);
 	}
 
-	public void executeClickEvent(int id) {
+	public void executeClickEvent(int id, int arg) {
 		switch (id) {
 		case BUTTON_PLAY:
 			play = PlayMode.PLAY;
@@ -873,31 +880,31 @@ public class MusicSelector extends MainState {
 			execute(MusicSelectCommand.OPEN_DOCUMENT);
 			break;
 		case BUTTON_MODE:
-			execute(MusicSelectCommand.NEXT_MODE);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_MODE : MusicSelectCommand.PREV_MODE);
 			break;
 		case BUTTON_SORT:
-			execute(MusicSelectCommand.NEXT_SORT);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_SORT : MusicSelectCommand.PREV_SORT);
 			break;
 		case BUTTON_LNMODE:
-			execute(MusicSelectCommand.NEXT_LNMODE);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_LNMODE : MusicSelectCommand.PREV_LNMODE);
 			break;
 		case BUTTON_RANDOM_1P:
-			execute(MusicSelectCommand.NEXT_OPTION_1P);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_OPTION_1P : MusicSelectCommand.PREV_OPTION_1P);
 			break;
 		case BUTTON_RANDOM_2P:
-			execute(MusicSelectCommand.NEXT_OPTION_2P);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_OPTION_2P : MusicSelectCommand.PREV_OPTION_2P);
 			break;
 		case BUTTON_DPOPTION:
-			execute(MusicSelectCommand.NEXT_OPTION_DP);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_OPTION_DP : MusicSelectCommand.PREV_OPTION_DP);
 			break;
 		case BUTTON_GAUGE_1P:
-			execute(MusicSelectCommand.NEXT_GAUGE_1P);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_GAUGE_1P : MusicSelectCommand.PREV_GAUGE_1P);
 			break;
 		case BUTTON_HSFIX:
-			execute(MusicSelectCommand.NEXT_HSFIX);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_HSFIX : MusicSelectCommand.PREV_HSFIX);
 			break;
 		case BUTTON_BGA:
-			execute(MusicSelectCommand.CHANGE_BGA_SHOW);
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_BGA_SHOW : MusicSelectCommand.PREV_BGA_SHOW);
 			break;
 		}
 	}

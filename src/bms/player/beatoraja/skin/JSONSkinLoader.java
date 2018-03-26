@@ -11,6 +11,7 @@ import java.util.*;
 import bms.player.beatoraja.Config;
 import bms.player.beatoraja.Resolution;
 import bms.player.beatoraja.SkinConfig;
+import bms.player.beatoraja.config.SkinConfigurationSkin;
 import bms.player.beatoraja.play.*;
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -31,6 +32,7 @@ import com.badlogic.gdx.utils.reflect.Field;
 import com.badlogic.gdx.utils.reflect.ReflectionException;
 
 import static bms.player.beatoraja.Resolution.*;
+import static bms.player.beatoraja.skin.SkinProperty.*;
 
 public class JSONSkinLoader extends SkinLoader{
 
@@ -142,10 +144,22 @@ public class JSONSkinLoader extends SkinLoader{
 			json.setIgnoreUnknownFields(true);
 
 			HashSet<Integer> enabledOptions = new HashSet<>();
-			if (property != null) {
-				for (SkinConfig.Option op : property.getOption()) {
-					enabledOptions.add(op.value);
+			for (SkinHeader.CustomOption customOption : header.getCustomOptions()) {
+				int op = customOption.getDefaultOption();
+				for (SkinConfig.Option option : property.getOption()) {
+					if (option.name.equals(customOption.name)) {
+						if(option.value != OPTION_RANDOM_VALUE) {
+							op = option.value;
+						} else {
+							if(customOption.option.length > 0) {
+								op = customOption.option[(int) (Math.random() * customOption.option.length)];
+								header.setRandomSelectedOptions(option.name, op);
+							}
+						}
+						break;
+					}
 				}
+				enabledOptions.add(op);
 			}
 			setSerializers(json, enabledOptions, p);
 
@@ -153,7 +167,31 @@ public class JSONSkinLoader extends SkinLoader{
 			for (SkinHeader.CustomFile customFile : header.getCustomFiles()) {
 				for(SkinConfig.FilePath file : property.getFile()) {
 					if (customFile.name.equals(file.name)) {
-						filemap.put(customFile.path, file.path);
+						if(!file.path.equals("Random")) {
+							filemap.put(customFile.path, file.path);
+						} else {
+							String ext = customFile.path.substring(customFile.path.lastIndexOf("*") + 1);
+							if(customFile.path.contains("|")) {
+								if(customFile.path.length() > customFile.path.lastIndexOf('|') + 1) {
+									ext = customFile.path.substring(customFile.path.lastIndexOf("*") + 1, customFile.path.indexOf('|')) + customFile.path.substring(customFile.path.lastIndexOf('|') + 1);
+								} else {
+									ext = customFile.path.substring(customFile.path.lastIndexOf("*") + 1, customFile.path.indexOf('|'));
+								}
+							}
+							File dir = new File(customFile.path.substring(0, customFile.path.lastIndexOf('/')));
+							if (dir.exists() && dir.isDirectory()) {
+								List<File> l = new ArrayList<File>();
+								for (File subfile : dir.listFiles()) {
+									if (subfile.getPath().toLowerCase().endsWith(ext)) {
+										l.add(subfile);
+									}
+								}
+								if (l.size() > 0) {
+									String filename = l.get((int) (Math.random() * l.size())).getName();
+									filemap.put(customFile.path, filename);
+								}
+							}
+						}
 					}
 				}
 			}
@@ -188,13 +226,20 @@ public class JSONSkinLoader extends SkinLoader{
 			if (type == SkinType.COURSE_RESULT) {
 				skin = new CourseResultSkin(src, dstr);
 			}
+			if (type == SkinType.SKIN_SELECT) {
+				skin = new SkinConfigurationSkin(src, dstr);
+			}
 
 			Map<Integer, Boolean> op = new HashMap<>();
 			for (Property pr : sk.property) {
 				int pop = 0;
 				for(SkinConfig.Option opt : property.getOption()) {
 					if(opt.name.equals(pr.name)) {
-						pop = opt.value;
+						if(opt.value != OPTION_RANDOM_VALUE) {
+							pop = opt.value;
+						} else {
+							if(header.getRandomSelectedOptions(opt.name) >= 0) pop = header.getRandomSelectedOptions(opt.name);
+						}
 						break;
 					}
 				}
@@ -253,6 +298,7 @@ public class JSONSkinLoader extends SkinLoader{
 							}
 							if (img.act > 0) {
 								obj.setClickevent(img.act);
+								obj.setClickeventType(img.click);
 							}
 
 							break;
@@ -284,6 +330,7 @@ public class JSONSkinLoader extends SkinLoader{
 							obj = si;
 							if (imgs.act > 0) {
 								obj.setClickevent(imgs.act);
+								obj.setClickeventType(imgs.click);
 							}
 							break;
 						}
@@ -899,6 +946,33 @@ public class JSONSkinLoader extends SkinLoader{
 					skin.add(obj);
 				}
 			}
+
+			if (sk.skinSelect != null && skin instanceof  SkinConfigurationSkin) {
+				SkinConfigurationSkin skinSelect = (SkinConfigurationSkin) skin;
+				skinSelect.setCustomOffsetStyle(sk.skinSelect.customOffsetStyle);
+				skinSelect.setDefaultSkinType(sk.skinSelect.defaultCategory);
+				skinSelect.setSampleBMS(sk.skinSelect.customBMS);
+				if (sk.skinSelect.customPropertyCount > 0) {
+					skinSelect.setCustomPropertyCount(sk.skinSelect.customPropertyCount);
+				} else {
+					int count = 0;
+					for (Image image : sk.image) {
+						if (SkinPropertyMapper.isSkinCustomizeButton(image.act)) {
+							int index = SkinPropertyMapper.getSkinCustomizeIndex(image.act);
+							if (count <= index)
+								count = index + 1;
+						}
+					}
+					for (ImageSet imageSet : sk.imageset) {
+						if (SkinPropertyMapper.isSkinCustomizeButton(imageSet.act)) {
+							int index = SkinPropertyMapper.getSkinCustomizeIndex(imageSet.act);
+							if (count <= index)
+								count = index + 1;
+						}
+					}
+					skinSelect.setCustomPropertyCount(count);
+				}
+			}
 		} catch (FileNotFoundException e) {
 			e.printStackTrace();
 		}
@@ -935,6 +1009,9 @@ public class JSONSkinLoader extends SkinLoader{
 			}
 			skin.setDestination(obj, a.time, a.x, a.y, a.w, a.h, a.acc, a.a, a.r, a.g, a.b, dst.blend, dst.filter,
 					a.angle, dst.center, dst.loop, dst.timer, dst.op);
+			if (dst.mouseRect != null) {
+				skin.setMouseRect(obj, dst.mouseRect.x, dst.mouseRect.y, dst.mouseRect.w, dst.mouseRect.h);
+			}
 			prev = a;
 		}
 
@@ -1061,6 +1138,7 @@ public class JSONSkinLoader extends SkinLoader{
 		public Judge[] judge = new Judge[0];
 		public SongList songlist;
 		public PMchara[] pmchara = new PMchara[0];
+		public SkinConfigurationProperty skinSelect;
 
 		public Destination[] destination;
 	}
@@ -1117,6 +1195,7 @@ public class JSONSkinLoader extends SkinLoader{
 		public int len;
 		public int ref;
 		public int act;
+		public int click = 0;
 	}
 
 	public static class ImageSet {
@@ -1124,6 +1203,7 @@ public class JSONSkinLoader extends SkinLoader{
 		public int ref;
 		public String[] images = new String[0];
 		public int act;
+		public int click = 0;
 	}
 
 	public static class Value {
@@ -1288,6 +1368,14 @@ public class JSONSkinLoader extends SkinLoader{
 		public int stretch = -1;
 		public int[] op = new int[0];
 		public Animation[] dst = new Animation[0];
+		public Rect mouseRect;
+	}
+
+	public static class Rect {
+		public int x;
+		public int y;
+		public int w;
+		public int h;
 	}
 
 	public static class Animation {
@@ -1315,6 +1403,13 @@ public class JSONSkinLoader extends SkinLoader{
 		public int color = 1;
 		public int type = Integer.MIN_VALUE;
 		public int side = 1;
+	}
+
+	public static class SkinConfigurationProperty {
+		public String[] customBMS;
+		public int defaultCategory = 0;
+		public int customPropertyCount = -1;
+		public int customOffsetStyle = 0;
 	}
 
 	private File getSrcIdPath(String srcid, Path p) {
@@ -1353,6 +1448,7 @@ public class JSONSkinLoader extends SkinLoader{
 				SongList.class,
 				Destination.class,
 				Animation.class,
+				SkinConfigurationProperty.class,
 		};
 		for (Class c : classes) {
 			json.setSerializer(c, new ObjectSerializer<>(enabledOptions, path));
