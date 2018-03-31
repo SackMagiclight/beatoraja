@@ -2,6 +2,18 @@ package bms.player.beatoraja.skin;
 
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
+import bms.player.beatoraja.MainState;
+import bms.player.beatoraja.ScoreDataProperty;
+import bms.player.beatoraja.select.MusicSelector;
+import bms.player.beatoraja.select.bar.Bar;
+import bms.player.beatoraja.select.bar.GradeBar;
+import bms.player.beatoraja.skin.SkinObject.BooleanProperty;
+import bms.player.beatoraja.skin.SkinObject.FloatProperty;
+import bms.player.beatoraja.skin.SkinObject.FloatWriter;
+import bms.player.beatoraja.skin.SkinObject.IntegerProperty;
+import bms.player.beatoraja.skin.SkinObject.StringProperty;
+import bms.player.beatoraja.song.SongData;
+
 public class SkinPropertyMapper {
 
 	public static int bombTimerId(int player, int key) {
@@ -149,4 +161,166 @@ public class SkinPropertyMapper {
 	public static int getSkinCustomizeItemIndex(int id) {
 		return id - STRING_SKIN_CUSTOMIZE_ITEM1;
 	}
+	
+	public static BooleanProperty getBooleanProperty(int optionid) {
+		// TODO 各Skinに分散するるべき？
+		BooleanProperty result = null;
+		final int id = Math.abs(optionid);
+		if (id >= OPTION_BEST_AAA_1P && id <= OPTION_BEST_F_1P) {			
+			final int[] values = { 0, 6, 9, 12, 15, 18, 21, 24, 28 };
+			final int low =values[OPTION_BEST_F_1P - id];
+			final int high =values[OPTION_BEST_F_1P - id + 1];
+			result = new BooleanProperty() {				
+				@Override
+				public boolean get(MainState state) {
+					final ScoreDataProperty score = state.getScoreDataProperty();
+					return score.qualifyBestRank(low) && !score.qualifyBestRank(high);
+				}
+			};
+		}
+		if (id >= OPTION_1P_AAA && id <= OPTION_1P_F) {			
+			result = new NowRankDrawCondition(OPTION_1P_F - id);
+		}
+		if (id >= OPTION_RESULT_AAA_1P && id <= OPTION_RESULT_F_1P) {			
+			result = new NowRankDrawCondition(OPTION_RESULT_F_1P - id);
+		}
+		if (id >= OPTION_NOW_AAA_1P && id <= OPTION_NOW_F_1P) {			
+			result = new NowRankDrawCondition(OPTION_NOW_F_1P - id);
+		}
+		
+		if(result != null && optionid < 0) {
+			final BooleanProperty dc = result;
+			result = new BooleanProperty() {
+				public boolean get(MainState state) {
+					return !dc.get(state);
+				}				
+			};
+		}
+		
+		return result;
+	}
+	
+	public static IntegerProperty getIntegerProperty(int optionid) {
+		IntegerProperty result = null;
+		if(optionid == NUMBER_MINBPM) {
+			result = (state) -> (state.main.getPlayerResource().getSongdata() != null ? 
+					state.main.getPlayerResource().getSongdata().getMinbpm() : Integer.MIN_VALUE);
+		}
+		if(optionid == NUMBER_MAXBPM) {
+			result = (state) -> (state.main.getPlayerResource().getSongdata() != null ? 
+					state.main.getPlayerResource().getSongdata().getMaxbpm() : Integer.MIN_VALUE);
+		}		
+		if(optionid == NUMBER_MAINBPM) {
+			result = (state) -> (state.main.getPlayerResource().getSongdata() != null ? 
+					state.main.getPlayerResource().getSongdata().getMainbpm() : Integer.MIN_VALUE);
+		}
+
+		return result;
+	}
+
+	public static IntegerProperty getImageIndexProperty(int optionid) {
+		IntegerProperty result = null;
+		
+		if(optionid == BUTTON_GAUGE_1P) {
+			result = (state) -> (state.main.getPlayerResource().getPlayerConfig().getGauge());
+		}
+		if(optionid == BUTTON_RANDOM_1P) {
+			result = (state) -> (state.main.getPlayerResource().getPlayerConfig().getRandom());
+		}		
+		if(optionid == BUTTON_RANDOM_2P) {
+			result = (state) -> (state.main.getPlayerResource().getPlayerConfig().getRandom2());
+		}		
+		if(optionid == BUTTON_DPOPTION) {
+			result = (state) -> (state.main.getPlayerResource().getPlayerConfig().getDoubleoption());
+		}		
+
+		return result;
+	}
+	
+	public static FloatProperty getFloatProperty(int optionid) {
+		FloatProperty result = null;
+		if(optionid == SLIDER_MUSICSELECT_POSITION) {
+			result = (state) -> (state instanceof MusicSelector ? ((MusicSelector) state).getBarRender().getSelectedPosition() : 0);
+		}
+		if(optionid == BARGRAPH_SCORERATE) {
+			result = (state) -> (state.getScoreDataProperty().getRate());
+		}
+		if(optionid == BARGRAPH_SCORERATE_FINAL) {
+			result = (state) -> (state.getScoreDataProperty().getNowRate());
+		}		
+		if(optionid == BARGRAPH_BESTSCORERATE_NOW) {
+			result = (state) -> (state.getScoreDataProperty().getNowBestScoreRate());
+		}		
+		if(optionid == BARGRAPH_BESTSCORERATE) {
+			result = (state) -> (state.getScoreDataProperty().getBestScoreRate());
+		}		
+		if(optionid == BARGRAPH_TARGETSCORERATE_NOW) {
+			result = (state) -> (state.getScoreDataProperty().getNowRivalScoreRate());
+		}		
+		if(optionid == BARGRAPH_TARGETSCORERATE) {
+			result = (state) -> (state.getScoreDataProperty().getRivalScoreRate());
+		}		
+
+		return result;
+	}
+	
+	public static FloatWriter getFloatWriter(int optionid) {
+		FloatWriter result = null;
+		
+		if(optionid == SLIDER_MUSICSELECT_POSITION) {
+			result = (state, value) -> {
+				if(state instanceof MusicSelector) {
+					final MusicSelector select = (MusicSelector) state;
+					select.selectedBarMoved();
+					select.getBarRender().setSelectedPosition(value);
+				}
+			};
+		}
+		
+		return result;
+	}
+
+	public static StringProperty getTextProperty(final int optionid) {
+		StringProperty result = null;
+		if(optionid >= STRING_COURSE1_TITLE && optionid <= STRING_COURSE10_TITLE) {
+			result = new StringProperty() {
+				private final int index = optionid - STRING_COURSE1_TITLE;
+				@Override
+				public String get(MainState state) {
+					if(state instanceof MusicSelector) {
+						final Bar bar = ((MusicSelector)state).getSelectedBar();
+						if (bar instanceof GradeBar) {
+							if (((GradeBar) bar).getSongDatas().length > index) {
+								SongData song = ((GradeBar) bar).getSongDatas()[index];
+								final String songname = song != null && song.getTitle() != null ? song.getTitle() : "----";
+								return song != null && song.getPath() != null ? songname : "(no song) " + songname;
+							}
+						}				
+					}
+					return "";
+				}
+				
+			};
+		}
+		return result;
+	}
+
+	private static class NowRankDrawCondition implements BooleanProperty {
+		
+		private final int low;
+		private final int high;
+		
+		public NowRankDrawCondition(int rank) {
+			final int[] values = { 0, 6, 9, 12, 15, 18, 21, 24, 28 };
+			low =values[rank];
+			high =values[rank + 1];
+		}
+
+		@Override
+		public boolean get(MainState state) {
+			final ScoreDataProperty score = state.getScoreDataProperty();
+			return score.qualifyNowRank(low) && (high > 27 ? true : !score.qualifyNowRank(high));
+		}
+		
+	}	
 }
