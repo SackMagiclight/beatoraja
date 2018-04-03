@@ -95,7 +95,7 @@ public class LaneRenderer {
 		this.skin = (PlaySkin) main.getSkin();
 		this.conf = main.main.getPlayerResource().getConfig();
 		this.config = main.main.getPlayerResource().getPlayerConfig();
-		this.playconfig = main.getPlayConfig(this.config).getPlayconfig().clone();
+		this.playconfig = config.getPlayConfig(model.getMode()).getPlayconfig().clone();
 
 		init(model);
 
@@ -243,6 +243,10 @@ public class LaneRenderer {
 		return playconfig.getLift();
 	}
 
+	public void setLiftRegion(float liftRegion) {
+		playconfig.setLift(liftRegion < 0 ? 0 : (liftRegion > 1 ? 1 : liftRegion));
+	}
+
 	public float getLanecover() {
 		return playconfig.getLanecover();
 	}
@@ -260,6 +264,18 @@ public class LaneRenderer {
 
 	public boolean isEnableLanecover() {
 		return playconfig.isEnablelanecover();
+	}
+
+	public float getHiddenCover() {
+		return playconfig.getHidden();
+	}
+
+	public void setHiddenCover(float hiddenCover) {
+		playconfig.setHidden(hiddenCover < 0 ? 0 : (hiddenCover > 1 ? 1 : hiddenCover));
+	}
+
+	public boolean isEnableHidden() {
+		return playconfig.isEnablehidden();
 	}
 
 	public void changeHispeed(boolean b) {
