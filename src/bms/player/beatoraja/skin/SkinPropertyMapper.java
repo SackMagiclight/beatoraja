@@ -4,10 +4,10 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import bms.model.Mode;
 import bms.player.beatoraja.MainState;
-import bms.player.beatoraja.PlayerResource;
 import bms.player.beatoraja.ScoreDataProperty;
 import bms.player.beatoraja.play.BMSPlayer;
-import bms.player.beatoraja.play.GrooveGauge;
+import bms.player.beatoraja.play.GrooveGauge.Gauge;
+import bms.player.beatoraja.play.LaneRenderer;
 import bms.player.beatoraja.result.CourseResult;
 import bms.player.beatoraja.result.MusicResult;
 import bms.player.beatoraja.select.MusicSelector;
@@ -190,8 +190,8 @@ public class SkinPropertyMapper {
 				@Override
 				public boolean get(MainState state) {
 					if(state instanceof BMSPlayer) {
-						final GrooveGauge gauge = ((BMSPlayer) state).getGauge();
-						return gauge.getValue() >= low * gauge.getMaxValue() && gauge.getValue() < high * gauge.getMaxValue();
+						final Gauge gauge = ((BMSPlayer) state).getGauge().getGauge();
+						return gauge.getValue() >= low * gauge.getProperty().max && gauge.getValue() < high * gauge.getProperty().max ;
 					}
 					return false;
 				}
@@ -271,6 +271,33 @@ public class SkinPropertyMapper {
 		if(optionid == NUMBER_MAINBPM) {
 			result = (state) -> (state.main.getPlayerResource().getSongdata() != null ? 
 					state.main.getPlayerResource().getSongdata().getMainbpm() : Integer.MIN_VALUE);
+		}
+		if(optionid >= NUMBER_DURATION_LANECOVER_ON && optionid <= NUMBER_MAXBPM_DURATION_GREEN_LANECOVER_OFF) {
+			final boolean green = (optionid - NUMBER_DURATION_LANECOVER_ON) % 2 == 1;
+			final boolean cover = (optionid - NUMBER_DURATION_LANECOVER_ON) % 4 < 2;
+			final int mode = (optionid - NUMBER_DURATION_LANECOVER_ON) / 4;
+			result = (state) -> {
+				if(state instanceof BMSPlayer) {
+					final LaneRenderer lanerender = ((BMSPlayer) state).getLanerender();
+					double bpm = 0;
+					switch(mode) {
+					case 0:
+						bpm = lanerender.getNowBPM();
+						break;
+					case 1:
+						bpm = lanerender.getMainBPM();
+						break;
+					case 2:
+						bpm = lanerender.getMinBPM();
+						break;
+					case 3:
+						bpm = lanerender.getMaxBPM();
+						break;
+					}
+					return (int) Math.round( (240000 / bpm / lanerender.getHispeed()) * (cover ? 1 - lanerender.getLanecover() : 1) * (green ? 1 : 0.6));
+				}
+				return 0;
+			};
 		}
 
 		return result;

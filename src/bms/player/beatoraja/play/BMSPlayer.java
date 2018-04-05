@@ -9,6 +9,7 @@ import bms.player.beatoraja.PlayerResource.PlayMode;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.input.KeyInputLog;
 import bms.player.beatoraja.pattern.*;
+import bms.player.beatoraja.play.GaugeProperty.GaugeElementProperty;
 import bms.player.beatoraja.play.PracticeConfiguration.PracticeProperty;
 import bms.player.beatoraja.play.bga.BGAProcessor;
 import bms.player.beatoraja.skin.*;
@@ -66,10 +67,6 @@ public class BMSPlayer extends MainState {
 	 * 処理済ノート数
 	 */
 	private int notes;
-	/**
-	 * 閉店フラグ
-	 */
-	private boolean isFailed = false;
 	/**
 	 * PMS キャラ用 ニュートラルモーション開始時の処理済ノート数{1P,2P} (ニュートラルモーション一周時に変化がなければニュートラルモーションを継続するため)
 	 */
@@ -369,8 +366,9 @@ public class BMSPlayer extends MainState {
 			Skin skin = getSkin();
 			int setParts = skin.getGaugeParts();
 			for(int type = 0; type < gauge.getGaugeTypeLength(); type++) {
-				for(int i = skin.getGaugeParts(); i <= gauge.getMaxValue(type); i++) {
-					if(gauge.getBorder(type) % (gauge.getMaxValue(type) / i) == 0) {
+				final GaugeElementProperty element = gauge.getGauge(type).getProperty();
+				for(int i = skin.getGaugeParts(); i <= element.max; i++) {
+					if(element.border % (element.max / i) == 0) {
 						setParts = Math.max(setParts, i);
 						break;
 					}
@@ -538,7 +536,6 @@ public class BMSPlayer extends MainState {
 				lanerender.init(model);
 				judge.init(model, resource);
 				notes = 0;
-				isFailed = false;
 				PMcharaLastnotes[0] = 0;
 				PMcharaLastnotes[1] = 0;
 				starttimeoffset = (property.starttime > 1000 ? property.starttime - 1000 : 0) * 100 / property.freq;
@@ -593,12 +590,12 @@ public class BMSPlayer extends MainState {
 					gaugelog[i].add(gauge.getValue(i));
 				}
 			}
-			main.switchTimer(TIMER_GAUGE_MAX_1P, g == gauge.getMaxValue());
+			main.switchTimer(TIMER_GAUGE_MAX_1P, gauge.getGauge().isMax());
 
 			if(main.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_1P_NEUTRAL) >= skin.getPMcharaTime(TIMER_PM_CHARA_1P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_1P_NEUTRAL) % skin.getPMcharaTime(TIMER_PM_CHARA_1P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) < 17) {
 				if(PMcharaLastnotes[0] != notes && judge.getPMcharaJudge() > 0) {
 					if(judge.getPMcharaJudge() == 1 || judge.getPMcharaJudge() == 2) {
-						if(g == gauge.getMaxValue()) main.setTimerOn(TIMER_PM_CHARA_1P_FEVER);
+						if(gauge.getGauge().isMax()) main.setTimerOn(TIMER_PM_CHARA_1P_FEVER);
 						else main.setTimerOn(TIMER_PM_CHARA_1P_GREAT);
 					} else if(judge.getPMcharaJudge() == 3) main.setTimerOn(TIMER_PM_CHARA_1P_GOOD);
 					else main.setTimerOn(TIMER_PM_CHARA_1P_BAD);
@@ -627,7 +624,7 @@ public class BMSPlayer extends MainState {
 			main.switchTimer(TIMER_PM_CHARA_DANCE, true);
 
 			// System.out.println("playing time : " + time);
-			if (playtime < ptime && !isFailed) {
+			if (playtime < ptime) {
 				state = STATE_FINISHED;
 				main.setTimerOn(TIMER_MUSIC_END);
 				for(int i = TIMER_PM_CHARA_1P_NEUTRAL; i <= TIMER_PM_CHARA_2P_BAD; i++) {
@@ -641,26 +638,20 @@ public class BMSPlayer extends MainState {
 			}
 			// stage failed判定
 			if (g == 0) {
-				if(config.isContinueUntilEndOfSong()
-						&& ( gauge.getType() != GrooveGauge.CLASS || (gauge.getType() == GrooveGauge.CLASS && notes != main.getPlayerResource().getSongdata().getNotes()) )
-						&& !isFailed
-						&& gauge.getType() != GrooveGauge.HAZARD) {
-					if(gauge.getType() != GrooveGauge.CLASS) {
-						gauge.downType();
-						if(resource.getPlayMode() == PlayMode.PLAY) config.setGauge(config.getGauge() > 0 ? config.getGauge() - 1 :0);
-					} else {
-						isFailed = true;
+				if(config.isContinueUntilEndOfSong() && gauge.getType() != GrooveGauge.HAZARD) {
+					if(!gauge.isCourseGauge()) {
+						// ARS処理
+						gauge.setType(GrooveGauge.NORMAL);
 					}
-				} else if(!config.isContinueUntilEndOfSong()
-						|| gauge.getType() == GrooveGauge.HAZARD
-						|| (config.isContinueUntilEndOfSong() && gauge.getType() == GrooveGauge.CLASS && notes == main.getPlayerResource().getSongdata().getNotes())) {
+				} else {
+					// FAILED移行
 					state = STATE_FAILED;
 					main.setTimerOn(TIMER_FAILED);
 					if (resource.mediaLoadFinished()) {
 						main.getAudioProcessor().stop((Note) null);
 					}
 					play(SOUND_PLAYSTOP);
-					Logger.getGlobal().info("STATE_FAILEDに移行");
+					Logger.getGlobal().info("STATE_FAILEDに移行");					
 				}
 			}
 			break;
@@ -713,12 +704,6 @@ public class BMSPlayer extends MainState {
 				main.switchTimer(TIMER_FADEOUT, true);
 			}
 			if (main.getNowTime(TIMER_FADEOUT) > skin.getFadeout()) {
-				if(config.isContinueUntilEndOfSong()) {
-					if(resource.getCourseBMSModels() == null) {
-						int changedGaugeType = gauge.changeTypeOfClear(gauge.getType());
-						if(resource.getPlayMode() == PlayMode.PLAY) config.setGauge(changedGaugeType);
-					}
-				}
 				main.getAudioProcessor().setGlobalPitch(1f);
 				resource.getBGAManager().stop();
 				if (!autoplay.isAutoPlayMode() && autoplay != PlayMode.PRACTICE) {
@@ -802,6 +787,7 @@ public class BMSPlayer extends MainState {
 		}
 		pc.setLanecover(lanerender.getLanecover());
 		pc.setLift(lanerender.getLiftRegion());
+		pc.setHidden(lanerender.getHiddenCover());
 	}
 
 	private void saveReplayHS() {
@@ -876,7 +862,7 @@ public class BMSPlayer extends MainState {
 		if (main.isTimerOn(TIMER_FAILED) || main.isTimerOn(TIMER_FADEOUT)) {
 			return;
 		}
-		if (state != STATE_FINISHED && notes == main.getPlayerResource().getSongdata().getNotes() && !isFailed) {
+		if (state != STATE_FINISHED && notes == main.getPlayerResource().getSongdata().getNotes()) {
 			state = STATE_FINISHED;
 			main.setTimerOn(TIMER_FADEOUT);
 			Logger.getGlobal().info("STATE_FINISHEDに移行");
@@ -1039,38 +1025,6 @@ public class BMSPlayer extends MainState {
 			return lanerender.getCurrentDuration();
 		case NUMBER_DURATION_GREEN:
 			return lanerender.getCurrentDuration() * 3 / 5;
-		case NUMBER_DURATION_LANECOVER_ON:
-			return lanerender.getCurrentDurationLanecoverOn();
-		case NUMBER_DURATION_GREEN_LANECOVER_ON:
-			return lanerender.getCurrentDurationLanecoverOn() * 3 / 5;
-		case NUMBER_DURATION_LANECOVER_OFF:
-			return lanerender.getCurrentDurationLanecoverOff();
-		case NUMBER_DURATION_GREEN_LANECOVER_OFF:
-			return lanerender.getCurrentDurationLanecoverOff() * 3 / 5;
-		case NUMBER_MAINBPM_DURATION_LANECOVER_ON:
-			return lanerender.getMainbpmdurationLanecoverOn();
-		case NUMBER_MAINBPM_DURATION_GREEN_LANECOVER_ON:
-			return lanerender.getMainbpmdurationLanecoverOn() * 3 / 5;
-		case NUMBER_MAINBPM_DURATION_LANECOVER_OFF:
-			return lanerender.getMainbpmdurationLanecoverOff();
-		case NUMBER_MAINBPM_DURATION_GREEN_LANECOVER_OFF:
-			return lanerender.getMainbpmdurationLanecoverOff() * 3 / 5;
-		case NUMBER_MINBPM_DURATION_LANECOVER_ON:
-			return lanerender.getMinbpmdurationLanecoverOn();
-		case NUMBER_MINBPM_DURATION_GREEN_LANECOVER_ON:
-			return lanerender.getMinbpmdurationLanecoverOn() * 3 / 5;
-		case NUMBER_MINBPM_DURATION_LANECOVER_OFF:
-			return lanerender.getMinbpmdurationLanecoverOff();
-		case NUMBER_MINBPM_DURATION_GREEN_LANECOVER_OFF:
-			return lanerender.getMinbpmdurationLanecoverOff() * 3 / 5;
-		case NUMBER_MAXBPM_DURATION_LANECOVER_ON:
-			return lanerender.getMaxbpmdurationLanecoverOn();
-		case NUMBER_MAXBPM_DURATION_GREEN_LANECOVER_ON:
-			return lanerender.getMaxbpmdurationLanecoverOn() * 3 / 5;
-		case NUMBER_MAXBPM_DURATION_LANECOVER_OFF:
-			return lanerender.getMaxbpmdurationLanecoverOff();
-		case NUMBER_MAXBPM_DURATION_GREEN_LANECOVER_OFF:
-			return lanerender.getMaxbpmdurationLanecoverOff() * 3 / 5;
 		case NUMBER_NOWBPM:
 			return (int) lanerender.getNowBPM();
 		case NUMBER_MAXCOMBO:
@@ -1122,58 +1076,6 @@ public class BMSPlayer extends MainState {
 		return super.getSliderValue(id);
 	}
 
-	public SkinOffset getOffsetValue(int id) {
-		// TODO 各クラスでoffsetを算出してこのメソッドは廃止したい
-		SkinOffset offset = main.getOffset(id);
-		final PlayConfig pc = lanerender.getPlayConfig();
-		switch (id) {
-		case OFFSET_SCRATCHANGLE_1P:
-			offset.r = keyinput.getScratchState(0);
-			break;
-		case OFFSET_SCRATCHANGLE_2P:
-			offset.r = keyinput.getScratchState(1);
-			break;
-		case OFFSET_LIFT:
-		case OFFSET_LIFT_OBSOLETE:
-			if (lanerender.isEnableLift()) {
-				final PlaySkin skin = (PlaySkin) getSkin();
-				offset.y = lanerender.getLiftRegion() * skin.getLaneRegion()[0].height;
-			} else {
-				offset.y = 0;
-			}
-			break;
-		case OFFSET_LANECOVER:
-		case OFFSET_LANECOVER_OBSOLETE:
-			if (pc.isEnablelanecover()) {
-				final PlaySkin skin = (PlaySkin) getSkin();
-				if (pc.isEnablelift()) {
-					offset.y =  -(1 - pc.getLift()) * pc.getLanecover()
-							* skin.getLaneRegion()[0].height;
-				} else {
-					offset.y =  -pc.getLanecover() * skin.getLaneRegion()[0].height;
-				}
-			} else {
-				offset.y = 0;
-			}
-			break;
-		case OFFSET_HIDDEN_COVER:
-			if (pc.isEnablehidden()) {
-				final PlaySkin skin = (PlaySkin) getSkin();
-				offset.a = 0;
-				if (pc.isEnablelift()) {
-					offset.y =  (1 - pc.getLift()) * pc.getHidden()
-							* skin.getLaneRegion()[0].height;
-				} else {
-					offset.y = pc.getHidden() * skin.getLaneRegion()[0].height;
-				}
-			} else {
-				offset.a = -255;
-			}
-			break;
-		}
-		return offset;
-	}
-
 	public boolean getBooleanValue(int id) {
 		switch (id) {
 		case OPTION_GAUGE_GROOVE:
@@ -1209,7 +1111,7 @@ public class BMSPlayer extends MainState {
 		case OPTION_LANECOVER1_ON:
 			return lanerender.getPlayConfig().isEnablelanecover();
 		case OPTION_1P_BORDER_OR_MORE:
-			return gauge.getValue() >= gauge.getBorder();
+			return gauge.getGauge().isQualified();
 		case OPTION_1P_PERFECT:
 			return judge.getNowJudge()[0] == 1;
 		case OPTION_1P_EARLY:
