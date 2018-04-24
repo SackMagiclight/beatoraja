@@ -1,31 +1,33 @@
 package bms.player.beatoraja;
 
-import java.io.*;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedDeque;
 import java.util.logging.Logger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
-import bms.player.beatoraja.song.SongData;
-import bms.table.BMSTableElement;
-import bms.table.Course;
-import bms.table.DifficultyTable;
-import bms.table.DifficultyTableElement;
-import bms.table.DifficultyTableParser;
-import bms.table.Course.Trophy;
-
 import com.badlogic.gdx.utils.Json;
 import com.badlogic.gdx.utils.JsonWriter.OutputType;
 
 import bms.model.Mode;
 import bms.player.beatoraja.CourseData.TrophyData;
+import bms.player.beatoraja.song.SongData;
+import bms.table.BMSTableElement;
+import bms.table.Course;
+import bms.table.Course.Trophy;
+import bms.table.DifficultyTable;
+import bms.table.DifficultyTableElement;
+import bms.table.DifficultyTableParser;
 
 /**
  * 難易度表データアクセス用クラス
@@ -107,7 +109,9 @@ public class TableDataAccessor {
 						Json json = new Json();
 						TableData td = json.fromJson(TableData.class,
 								new BufferedInputStream(new GZIPInputStream(Files.newInputStream(p))));
-						result.add(td);
+						if(isValid(td)) {
+							result.add(td);
+						}
 					} catch(Throwable e) {
 						e.printStackTrace();
 					}
@@ -134,6 +138,9 @@ public class TableDataAccessor {
 						Json json = new Json();
 						td = json.fromJson(TableData.class,
 								new BufferedInputStream(new GZIPInputStream(Files.newInputStream(p))));
+						if(!isValid(td)) {
+							td = null;
+						}
 						break;
 					} catch(Throwable e) {
 
@@ -239,6 +246,9 @@ public class TableDataAccessor {
 
 					td.setCourse(gname.toArray(new CourseData[gname.size()]));
 				}
+				if(!isValid(td)) {
+					throw new RuntimeException("難易度表の値が不正です");
+				}
 				return td;
 			} catch (Throwable e) {
 				e.printStackTrace();
@@ -251,6 +261,13 @@ public class TableDataAccessor {
 		public void write(TableData td) {
 			new TableDataAccessor().write(td);
 		}
+	}
+	
+	public static boolean isValid(TableData td) {
+		if(td == null) {
+			return false;
+		}
+		return td.getName() != null && td.getCourse() != null && td.getFolder() != null && (td.getCourse().length + td.getFolder().length > 0);
 	}
 
 	private static SongData toSongData(BMSTableElement te, Mode defaultMode) {
@@ -266,10 +283,12 @@ public class TableDataAccessor {
 		Mode mode = te.getMode() != null ? Mode.getMode(te.getMode()) : null;
 		song.setMode(mode != null ? mode.id : (defaultMode != null ? defaultMode.id : 0));
 		song.setUrl(te.getURL());
-		
+		song.setIpfs(te.getIPFS());
+		song.setOrg_md5(te.getParentHash());
 		if(te instanceof DifficultyTableElement) {
 			DifficultyTableElement dte = (DifficultyTableElement) te;
 			song.setAppendurl(dte.getAppendURL());
+			song.setAppendIpfs(dte.getAppendIPFS());
 		}
 		
 		return song;

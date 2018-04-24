@@ -266,6 +266,8 @@ public abstract class SkinObject implements Disposable {
 	}
 
 	public void setStretch(int stretch) {
+		if (stretch < 0)
+			return;
 		for (StretchType type : StretchType.values()) {
 			if (type.id == stretch) {
 				this.stretch = type;
@@ -748,6 +750,12 @@ public abstract class SkinObject implements Disposable {
 				}
 			}
 		}
+	}
+	
+	public interface Event {
+		
+		public void exec(MainState state);
+
 	}
 	
 	public interface FloatWriter {

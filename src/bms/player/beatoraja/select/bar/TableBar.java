@@ -10,7 +10,7 @@ import java.util.*;
 
 /**
  * 難易度表バー
- * 
+ *
  * @author exch
  */
 public class TableBar extends DirectoryBar {
@@ -43,6 +43,10 @@ public class TableBar extends DirectoryBar {
         return td.getName();
     }
 
+	public String getUrl() {
+		return td.getUrl();
+	}
+
     public TableDataAccessor.TableAccessor getAccessor() {
     	return tr;
     }
@@ -55,7 +59,7 @@ public class TableBar extends DirectoryBar {
     	for(int i = 0;i < folder.length;i++) {
     		levels[i] = new HashBar(selector, folder[i].getName(), folder[i].getSong());
     	}
-    	
+
 		final CourseData[] courses = td.getCourse();
 		Set<String> hashset = new HashSet<String>(courses.length * 4);
 		for (CourseData course : courses) {
@@ -67,9 +71,9 @@ public class TableBar extends DirectoryBar {
 
 		grades = new GradeBar[courses.length];
 		for (int i = 0;i < courses.length;i++) {
-			SongData[] songlist = new SongData[courses[i].getSong().length];
+			SongData[] songlist = courses[i].getSong();
 			for (int j = 0;j < songlist.length;j++) {
-				final SongData hash = songlist[j] = courses[i].getSong()[j];
+				final SongData hash = songlist[j];
 				for(SongData sd :songs) {
 					if((hash.getMd5().length() > 0 && hash.getMd5().equals(sd.getMd5())) || (hash.getSha256().length() > 0 && hash.getSha256().equals(sd.getSha256()))) {
 						songlist[j] = sd;
@@ -77,9 +81,9 @@ public class TableBar extends DirectoryBar {
 					}
 				}
 			}
-			grades[i] = new GradeBar(courses[i].getName(), songlist, courses[i]);
+			grades[i] = new GradeBar(courses[i]);
 		}
-		
+
 		children = new Bar[levels.length + grades.length];
 		int index = 0;
 		for (int i = 0;i < levels.length;i++, index++) {

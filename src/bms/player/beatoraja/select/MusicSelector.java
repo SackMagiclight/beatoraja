@@ -1,13 +1,16 @@
 package bms.player.beatoraja.select;
 
-import static bms.player.beatoraja.skin.SkinProperty.*;
 import static bms.player.beatoraja.ClearType.*;
+import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.*;
+import java.util.Deque;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.Set;
 import java.util.logging.Logger;
 
 import com.badlogic.gdx.Gdx;
@@ -16,13 +19,31 @@ import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.utils.Array;
 
 import bms.model.Mode;
-import bms.player.beatoraja.*;
+import bms.player.beatoraja.CourseData;
+import bms.player.beatoraja.IRScoreData;
 import bms.player.beatoraja.IRScoreData.SongTrophy;
+import bms.player.beatoraja.MainController;
+import bms.player.beatoraja.MainState;
+import bms.player.beatoraja.PixmapResourcePool;
+import bms.player.beatoraja.PlayConfig;
+import bms.player.beatoraja.PlayDataAccessor;
+import bms.player.beatoraja.PlayModeConfig;
+import bms.player.beatoraja.PlayerConfig;
+import bms.player.beatoraja.PlayerData;
+import bms.player.beatoraja.PlayerInformation;
+import bms.player.beatoraja.PlayerResource;
 import bms.player.beatoraja.PlayerResource.PlayMode;
+import bms.player.beatoraja.ScoreDatabaseAccessor;
 import bms.player.beatoraja.ScoreDatabaseAccessor.ScoreDataCollector;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.ir.IRResponse;
-import bms.player.beatoraja.select.bar.*;
+import bms.player.beatoraja.select.bar.Bar;
+import bms.player.beatoraja.select.bar.DirectoryBar;
+import bms.player.beatoraja.select.bar.GradeBar;
+import bms.player.beatoraja.select.bar.HashBar;
+import bms.player.beatoraja.select.bar.SelectableBar;
+import bms.player.beatoraja.select.bar.SongBar;
+import bms.player.beatoraja.select.bar.TableBar;
 import bms.player.beatoraja.skin.SkinType;
 import bms.player.beatoraja.song.SongData;
 import bms.player.beatoraja.song.SongDatabaseAccessor;
@@ -309,6 +330,8 @@ public class MusicSelector extends MainState {
 						main.changeState(MainController.STATE_DECIDE);
 						banners.disposeOld();
 					}
+				} else if(song.getIpfs() != null && main.getMusicDownloadProcessor().isAlive()){
+					execute(MusicSelectCommand.DOWNLOAD_IPFS);
 				} else {
 	                execute(MusicSelectCommand.OPEN_DOWNLOAD_SITE);
 				}
@@ -389,7 +412,7 @@ public class MusicSelector extends MainState {
 				files[i++] = Paths.get(song.getPath());
 			}
 			if (resource.setCourseBMSFiles(files)) {
-				for (CourseData.CourseDataConstraint constraint : course.getConstraint()) {
+				for (CourseData.CourseDataConstraint constraint : course.getCourseData().getConstraint()) {
 					switch (constraint) {
 					case CLASS:
 						if (mode == PlayMode.PLAY || mode.isAutoPlayMode()) {
@@ -420,16 +443,13 @@ public class MusicSelector extends MainState {
 							}
 						}
 						break;
-					case NO_SPEED:
-						case NO_GOOD:
-						case NO_GREAT:
-						case GAUGE_LR2:
-						resource.addConstraint(constraint);
+					default:
 						break;
 					}
 				}
 				preview.stop();
-				resource.setCoursetitle(bar.getSelected().getTitle());
+				course.getCourseData().setSong(resource.getCourseBMSModels());
+				resource.setCourseData(course.getCourseData());
 				resource.setBMSFile(files[0], mode);
 				main.changeState(MainController.STATE_DECIDE);
 				banners.disposeOld();
@@ -671,7 +691,7 @@ public class MusicSelector extends MainState {
 		}
 		return super.getSliderValue(id);
 	}
-	
+
 	private float getLevelRate(int difficulty) {
 		if (bar.getSelected() instanceof SongBar && ((SongBar) bar.getSelected()).getSongData() != null) {
 			SongData sd = ((SongBar) bar.getSelected()).getSongData();
@@ -843,14 +863,14 @@ public class MusicSelector extends MainState {
 		}
 
 		GradeBar gb = (GradeBar) bar.getSelected();
-		for (CourseData.CourseDataConstraint con : gb.getConstraint()) {
+		for (CourseData.CourseDataConstraint con : gb.getCourseData().getConstraint()) {
 			if(con == constraint) {
 				return true;
 			}
 		}
 		return false;
 	}
-	
+
 	private boolean existsTrophy(SongTrophy trophy) {
 		final IRScoreData score = getScoreDataProperty().getScoreData();
 		return score != null && score.getTrophy() != null && score.getTrophy().indexOf(trophy.character) >= 0;
@@ -940,7 +960,7 @@ public class MusicSelector extends MainState {
 	public BarRenderer getBarRender() {
 		return bar;
 	}
-	
+
 	public PixmapResourcePool getBannerResource() {
 		return banners;
 	}
