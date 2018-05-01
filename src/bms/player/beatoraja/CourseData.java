@@ -8,7 +8,10 @@ import bms.player.beatoraja.song.SongData;
  *
  * @author exch
  */
-public class CourseData {
+public class CourseData implements Validatable {
+	
+	public static final CourseData[] EMPTY = new CourseData[0];
+	
     /**
      * コース名
      */
@@ -20,12 +23,16 @@ public class CourseData {
     /**
      * コースの制限
      */
-    private CourseDataConstraint[] constraint = new CourseDataConstraint[0];
+    private CourseDataConstraint[] constraint = CourseDataConstraint.EMPTY;
     /**
      * トロフィー条件
      */
-    private TrophyData[] trophy = new TrophyData[0];
+    private TrophyData[] trophy = TrophyData.EMPTY;
 
+    public CourseData() {
+    	
+    }
+    
     public String getName() {
         return name;
     }
@@ -51,9 +58,6 @@ public class CourseData {
     }
 
     public CourseDataConstraint[] getConstraint() {
-    	if(constraint == null) {
-    		constraint = new CourseDataConstraint[0];
-    	}
         return constraint;
     }
 
@@ -77,7 +81,17 @@ public class CourseData {
         }
         return false;
     }
-
+    
+    public boolean validate() {
+    	if(hash == null || (hash = Validatable.removeInvalidElements(hash)).length == 0) {
+    		return false;
+    	}
+    	
+    	constraint = constraint != null ? Validatable.removeInvalidElements(constraint) : CourseDataConstraint.EMPTY;
+    	trophy = trophy != null ? Validatable.removeInvalidElements(trophy) : TrophyData.EMPTY;    	
+    	return true;
+    }
+    
     /**
      * コースの制約
      *
@@ -96,6 +110,8 @@ public class CourseData {
     	GAUGE_9KEYS("gauge_9k"),
     	GAUGE_24KEYS("gauge_24k");
 
+    	public static final CourseDataConstraint[] EMPTY = new CourseDataConstraint[0];
+    	
         public final String name;
 
         private CourseDataConstraint(String name) {
@@ -107,7 +123,9 @@ public class CourseData {
      *
      * @author exch
      */
-    public static class TrophyData {
+    public static class TrophyData implements Validatable {
+    	
+    	public static final TrophyData[] EMPTY = new TrophyData[0];
 
         private String name;
 
@@ -148,6 +166,11 @@ public class CourseData {
         public void setScorerate(float scorerate) {
             this.scorerate = scorerate;
         }
+
+		@Override
+		public boolean validate() {
+			return name != null && missrate > 0 && scorerate < 100;
+		}
     }
 
 }

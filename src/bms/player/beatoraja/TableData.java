@@ -7,7 +7,8 @@ import bms.player.beatoraja.song.SongData;
  *
  * @author exch
  */
-public class TableData {
+public class TableData implements Validatable {
+	
 	/**
 	 * 難易度表URL
 	 */
@@ -18,9 +19,9 @@ public class TableData {
 	private String name = "";
 	private String tag = "";
 	
-	private TableFolder[] folder = new TableFolder[0];
+	private TableFolder[] folder = TableFolder.EMPTY;
 	
-	private CourseData[] course = new CourseData[0];
+	private CourseData[] course = CourseData.EMPTY;
 	
 	public String getName() {
 		return name;
@@ -61,12 +62,22 @@ public class TableData {
 	public void setTag(String tag) {
 		this.tag = tag;
 	}
+	
+	public boolean validate() {
+		if(name == null || name.length() == 0) {
+			return false;
+		}
+		folder = folder != null ? Validatable.removeInvalidElements(folder) : TableFolder.EMPTY;
+		course = course != null ? Validatable.removeInvalidElements(course) : CourseData.EMPTY;;
+		return folder.length + course.length > 0;
+	}
 
-	public static class TableFolder {
+	public static class TableFolder implements Validatable {
 
+		public static final TableFolder[] EMPTY = new TableFolder[0];
+		
 		private String name;
 		private SongData[] songs = new SongData[0];
-		private String level;
 
 		public String getName() {
 			return name;
@@ -84,12 +95,10 @@ public class TableData {
 			this.songs = songs;
 		}
 
-		public String getLevel() {
-			return level;
-		}
-
-		public void setLevel(String level) {
-			this.level = level;
+		@Override
+		public boolean validate() {
+			songs = Validatable.removeInvalidElements(songs);
+			return name != null && name.length() > 0 && songs.length > 0;
 		}
 	}
 
