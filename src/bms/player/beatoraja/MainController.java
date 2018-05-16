@@ -24,14 +24,8 @@ import com.badlogic.gdx.Gdx;
 import com.badlogic.gdx.Graphics;
 import com.badlogic.gdx.InputMultiplexer;
 import com.badlogic.gdx.files.FileHandle;
-import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.graphics.GL20;
-import com.badlogic.gdx.graphics.Pixmap;
-import com.badlogic.gdx.graphics.PixmapIO;
-import com.badlogic.gdx.graphics.Texture;
-import com.badlogic.gdx.graphics.g2d.BitmapFont;
-import com.badlogic.gdx.graphics.g2d.SpriteBatch;
-import com.badlogic.gdx.graphics.g2d.TextureRegion;
+import com.badlogic.gdx.graphics.*;
+import com.badlogic.gdx.graphics.g2d.*;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter;
 import com.badlogic.gdx.scenes.scene2d.Stage;
@@ -41,10 +35,7 @@ import com.badlogic.gdx.utils.ScreenUtils;
 import com.badlogic.gdx.utils.StringBuilder;
 
 import bms.player.beatoraja.PlayerResource.PlayMode;
-import bms.player.beatoraja.audio.AudioDriver;
-import bms.player.beatoraja.audio.GdxAudioDeviceDriver;
-import bms.player.beatoraja.audio.GdxSoundDriver;
-import bms.player.beatoraja.audio.PortAudioDriver;
+import bms.player.beatoraja.audio.*;
 import bms.player.beatoraja.config.KeyConfiguration;
 import bms.player.beatoraja.config.SkinConfiguration;
 import bms.player.beatoraja.decide.MusicDecide;
@@ -60,10 +51,8 @@ import bms.player.beatoraja.select.bar.TableBar;
 import bms.player.beatoraja.skin.SkinLoader;
 import bms.player.beatoraja.skin.SkinObject.SkinOffset;
 import bms.player.beatoraja.skin.SkinProperty;
-import bms.player.beatoraja.song.SQLiteSongDatabaseAccessor;
-import bms.player.beatoraja.song.SongData;
-import bms.player.beatoraja.song.SongDatabaseAccessor;
-import bms.player.beatoraja.song.SongInformationAccessor;
+import bms.player.beatoraja.song.*;
+import bms.tool.mdprocessor.MusicDownloadProcessor;
 import twitter4j.Status;
 import twitter4j.StatusUpdate;
 import twitter4j.Twitter;
@@ -175,13 +164,15 @@ public class MainController extends ApplicationAdapter {
 
 		this.bmsfile = f;
 
-		Path ipfspath = Paths.get("ipfs").toAbsolutePath();
-		if (!ipfspath.toFile().exists())
-			ipfspath.toFile().mkdirs();
-		List<String> roots = new ArrayList<>(Arrays.asList(getConfig().getBmsroot()));
-		if (ipfspath.toFile().exists() && !roots.contains(ipfspath.toString())) {
-			roots.add(ipfspath.toString());
-			getConfig().setBmsroot(roots.toArray(new String[roots.size()]));
+		if (config.isEnableIpfs()) {
+			Path ipfspath = Paths.get("ipfs").toAbsolutePath();
+			if (!ipfspath.toFile().exists())
+				ipfspath.toFile().mkdirs();
+			List<String> roots = new ArrayList<>(Arrays.asList(getConfig().getBmsroot()));
+			if (ipfspath.toFile().exists() && !roots.contains(ipfspath.toString())) {
+				roots.add(ipfspath.toString());
+				getConfig().setBmsroot(roots.toArray(new String[roots.size()]));
+			}
 		}
 		try {
 			Class.forName("org.sqlite.JDBC");
@@ -306,6 +297,8 @@ public class MainController extends ApplicationAdapter {
 			current = newState;
 			currentState = newState;
 			starttime = System.nanoTime();
+			nowmicrotime = ((System.nanoTime() - starttime) / 1000);
+			current.prepare();
 		}
 		if (current.getStage() != null) {
 			Gdx.input.setInputProcessor(new InputMultiplexer(current.getStage(), input.getKeyBoardInputProcesseor()));
@@ -392,8 +385,17 @@ public class MainController extends ApplicationAdapter {
 
 		Gdx.gl.glClearColor(0, 0, 0, 1);
 
-		download = new MusicDownloadProcessor(this);
-		download.start(null);
+		if (config.isEnableIpfs()) {
+			download = new MusicDownloadProcessor(config.getIpfspath(), (md5) -> {
+				SongData[] s = getSongDatabase().getSongDatas(md5);
+				String[] result = new String[s.length];
+				for(int i = 0;i < result.length;i++) {
+					result[i] = s[i].getPath();
+				}
+				return result;
+			});
+			download.start(null);
+		}
 	}
 
 	private long prevtime;
@@ -465,8 +467,14 @@ public class MainController extends ApplicationAdapter {
 				sprite.end();
 			}
 		}else if(download != null && download.isDownload()){
+			if (updatefont == null) {
+				downloadIpfsMessageRenderer(download.getMessage());
+			}
 			if(currentState instanceof MusicSelector) {
-				download.drawMessage();
+				sprite.begin();
+				updatefont.setColor(0, 1, 1, 0.5f + (System.currentTimeMillis() % 750) / 1000.0f);
+				updatefont.draw(sprite, download.getMessage(), 100, config.getResolution().height - 2);
+				sprite.end();
 			}
 		}
 
@@ -546,7 +554,7 @@ public class MainController extends ApplicationAdapter {
                 input.getFunctiontime()[6] = 0;
             }
 
-            if(download.getDownloadpath() != null){
+			if (download != null && download.getDownloadpath() != null) {
             	this.updateSong(download.getDownloadpath());
             	download.setDownloadpath(null);
             }
@@ -582,7 +590,9 @@ public class MainController extends ApplicationAdapter {
 //		input.dispose();
 		SkinLoader.getResource().dispose();
 		ShaderManager.dispose();
-		download.dispose();
+		if (download != null) {
+			download.dispose();
+		}
 
 		Logger.getGlobal().info("全リソース破棄完了");
 	}
@@ -934,6 +944,17 @@ public class MainController extends ApplicationAdapter {
 		}
 	}
 
+	private UpdateThread downloadIpfs;
+
+	public void downloadIpfsMessageRenderer(String message) {
+		if (downloadIpfs == null || !downloadIpfs.isAlive()) {
+			downloadIpfs = new DownloadMessageThread(message);
+			downloadIpfs.start();
+		} else {
+			Logger.getGlobal().warning("楽曲ダウンロード中です");
+		}
+	}
+
 	abstract class UpdateThread extends Thread {
 
 		private String message;
@@ -993,10 +1014,26 @@ public class MainController extends ApplicationAdapter {
 		}
 	}
 
+	class DownloadMessageThread extends UpdateThread {
+		public DownloadMessageThread(String message) {
+			super(message);
+		}
+
+		public void run() {
+			while (download != null && download.isDownload() && download.getMessage() != null) {
+				try {
+					sleep(100);
+				} catch (InterruptedException e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}
+
 	public static class SystemSoundManager {
-		private Array<Path> bgms = new Array();
+		private Array<Path> bgms = new Array<Path>();
 		private Path currentBGMPath;
-		private Array<Path> sounds = new Array();
+		private Array<Path> sounds = new Array<Path>();
 		private Path currentSoundPath;
 
 		public SystemSoundManager(Config config) {

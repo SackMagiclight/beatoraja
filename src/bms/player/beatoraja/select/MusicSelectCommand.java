@@ -18,12 +18,8 @@ import bms.player.beatoraja.PlayerInformation;
 import bms.player.beatoraja.TableData;
 import bms.player.beatoraja.TableDataAccessor;
 import bms.player.beatoraja.TableDataAccessor.TableAccessor;
-import bms.player.beatoraja.select.bar.Bar;
-import bms.player.beatoraja.select.bar.DirectoryBar;
-import bms.player.beatoraja.select.bar.FolderBar;
-import bms.player.beatoraja.select.bar.SelectableBar;
-import bms.player.beatoraja.select.bar.SongBar;
-import bms.player.beatoraja.select.bar.TableBar;
+import bms.player.beatoraja.ir.IRConnection;
+import bms.player.beatoraja.select.bar.*;
 import bms.player.beatoraja.song.SongData;
 
 public enum MusicSelectCommand {
@@ -337,6 +333,32 @@ public enum MusicSelectCommand {
             }
         }
     },
+    OPEN_RANKING_ON_IR {
+        @Override
+        public void execute(MusicSelector selector) {
+            IRConnection ir = selector.main.getIRConnection();
+            if(ir == null) {
+                return;
+            }
+
+            Bar current = selector.getBarRender().getSelected();
+            String url = null;
+            if(current instanceof SongBar) {
+                url = ir.getSongURL(((SongBar) current).getSongData());
+            }
+            if(current instanceof GradeBar) {
+                url = ir.getCourseURL(((GradeBar) current).getCourseData());
+            }
+            if (url != null) {
+                try {
+                    URI uri = new URI(url);
+                    Desktop.getDesktop().browse(uri);
+                } catch (Throwable e) {
+                    e.printStackTrace();
+                }
+            }
+        }
+    },
     DOWNLOAD_IPFS {
         @Override
         public void execute(MusicSelector selector) {
@@ -438,7 +460,7 @@ public enum MusicSelectCommand {
                 SongBar song = (SongBar) current;
                 pc = selector.main.getPlayerConfig().getPlayConfig(song.getSongData().getMode()).getPlayconfig();
             }
-            if (pc != null && pc.getDuration() < 2000) {
+            if (pc != null && pc.getDuration() < 5000) {
                 pc.setDuration(pc.getDuration() + 1);
                 selector.play(SOUND_CHANGEOPTION);
             }
@@ -458,6 +480,38 @@ public enum MusicSelectCommand {
                 selector.play(SOUND_CHANGEOPTION);
             }
 		}
+    },
+    DURATION_UP_LARGE {
+        @Override
+        public void execute(MusicSelector selector) {
+            Bar current = selector.getBarRender().getSelected();
+            PlayConfig pc = null;
+            if (current instanceof SongBar && ((SongBar)current).existsSong()) {
+                SongBar song = (SongBar) current;
+                pc = selector.main.getPlayerConfig().getPlayConfig(song.getSongData().getMode()).getPlayconfig();
+            }
+            if (pc != null && pc.getDuration() < 5000) {
+                int duration = pc.getDuration() + 10;
+                pc.setDuration(duration - duration % 10);
+                selector.play(SOUND_CHANGEOPTION);
+            }
+        }
+    },
+    DURATION_DOWN_LARGE {
+        @Override
+        public void execute(MusicSelector selector) {
+            Bar current = selector.getBarRender().getSelected();
+            PlayConfig pc = null;
+            if (current instanceof SongBar && ((SongBar)current).existsSong()) {
+                SongBar song = (SongBar) current;
+                pc = selector.main.getPlayerConfig().getPlayConfig(song.getSongData().getMode()).getPlayconfig();
+            }
+            if (pc != null && pc.getDuration() > 10) {
+                int duration = pc.getDuration() - 10;
+                pc.setDuration(duration - duration % 10);
+                selector.play(SOUND_CHANGEOPTION);
+            }
+        }
     },
     NEXT_BGA_SHOW {
 		@Override

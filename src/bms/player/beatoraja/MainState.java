@@ -2,8 +2,7 @@ package bms.player.beatoraja;
 
 import java.io.File;
 import java.nio.file.Path;
-import java.util.*;
-import java.util.Map.Entry;
+import java.util.Calendar;
 
 import bms.player.beatoraja.SkinConfig.Offset;
 import bms.player.beatoraja.play.TargetProperty;
@@ -44,6 +43,10 @@ public abstract class MainState {
 	}
 
 	public abstract void create();
+
+	public void prepare() {
+
+	}
 
 	public abstract void render();
 
@@ -124,9 +127,9 @@ public abstract class MainState {
 		case OPTION_TEXT:
 			return model != null && model.hasDocument();
 		case OPTION_NO_LN:
-			return model != null && !model.hasLongNote();
+			return model != null && !model.hasAnyLongNote();
 		case OPTION_LN:
-			return model != null && model.hasLongNote();
+			return model != null && model.hasAnyLongNote();
 		case OPTION_NO_BGA:
 			return model != null && !model.hasBGA();
 		case OPTION_BGA:

@@ -12,6 +12,7 @@ import bms.player.beatoraja.select.bar.*;
 import bms.player.beatoraja.skin.*;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.Json;
@@ -524,8 +525,26 @@ public class BarRenderer {
 			}
 
 			// LN
-			if ((flag & SongData.FEATURE_LONGNOTE) != 0 && baro.getLabel()[0] != null) {
-				baro.getLabel()[0].draw(sprite, time, select, ba.x, ba.y);
+			int ln = -1;
+			if((flag & SongData.FEATURE_UNDEFINEDLN) != 0) {
+				ln = select.main.getPlayerConfig().getLnmode();
+			}
+			if((flag & SongData.FEATURE_LONGNOTE) != 0) {
+				ln = ln > 0 ? ln : 0;
+			}
+			if((flag & SongData.FEATURE_CHARGENOTE) != 0) {
+				ln = ln > 1 ? ln : 1;
+			}
+			if((flag & SongData.FEATURE_HELLCHARGENOTE) != 0) {
+				ln = ln > 2 ? ln : 2;
+			}
+
+			if(ln >= 0) {
+				// TODO LNラベル描画分岐
+				final int[] lnindex = {0,0,0};
+				if (baro.getLabel()[lnindex[ln]] != null) {
+					baro.getLabel()[lnindex[ln]].draw(sprite, time, select, ba.x, ba.y);
+				}
 			}
 			// MINE
 			if ((flag & SongData.FEATURE_MINENOTE) != 0 && baro.getLabel()[2] != null) {
@@ -816,8 +835,17 @@ public class BarRenderer {
 		public void run() {
 			final MainController main = select.main;
 			PlayerConfig config = main.getPlayerResource().getPlayerConfig();
-			final SongInformationAccessor info = main.getInfoDatabase();
 			final ScoreDataCache rival = select.getRivalScoreDataCache();
+
+			final Array<SongData> songarray = new Array<>(bars.length);
+			for (Bar bar : bars) {
+				if (bar instanceof SongBar && ((SongBar) bar).existsSong()) {
+					songarray.add(((SongBar) bar).getSongData());
+				}
+			}
+			final SongData[] songs = songarray.toArray(SongData.class);
+			// loading score
+			// TODO collectorを使用してスコアをまとめて取得
 			for (Bar bar : bars) {
 				if (bar instanceof SongBar && ((SongBar) bar).existsSong()) {
 					SongData sd = ((SongBar) bar).getSongData();
@@ -833,9 +861,6 @@ public class BarRenderer {
 								config.getLnmode(), i);
 					}
 					((SongBar) bar).setExistsReplayData(replay);
-					if(info != null) {
-						sd.setInformation(info.getInformation(sd.getSha256()));
-					}
 				}
 				if (bar instanceof GradeBar) {
 					GradeBar gb = (GradeBar) bar;
@@ -867,6 +892,12 @@ public class BarRenderer {
 					break;
 				}
 			}
+			// loading song information
+			final SongInformationAccessor info = main.getInfoDatabase();
+			if(info != null) {
+				info.getInformation(songs);
+			}
+			// loading banner
 			for (Bar bar : bars) {
 				if (bar instanceof SongBar && ((SongBar) bar).existsSong()) {
 					final SongBar songbar = (SongBar) bar;
