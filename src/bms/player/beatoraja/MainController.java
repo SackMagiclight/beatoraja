@@ -2,17 +2,10 @@ package bms.player.beatoraja;
 
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.*;
+import java.nio.file.*;
 import java.text.SimpleDateFormat;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Calendar;
-import java.util.List;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
@@ -28,10 +21,9 @@ import com.badlogic.gdx.graphics.*;
 import com.badlogic.gdx.graphics.g2d.*;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator;
 import com.badlogic.gdx.graphics.g2d.freetype.FreeTypeFontGenerator.FreeTypeFontParameter;
+import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.scenes.scene2d.Stage;
-import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.BufferUtils;
-import com.badlogic.gdx.utils.ScreenUtils;
+import com.badlogic.gdx.utils.*;
 import com.badlogic.gdx.utils.StringBuilder;
 
 import bms.player.beatoraja.PlayerResource.PlayMode;
@@ -53,11 +45,7 @@ import bms.player.beatoraja.skin.SkinObject.SkinOffset;
 import bms.player.beatoraja.skin.SkinProperty;
 import bms.player.beatoraja.song.*;
 import bms.tool.mdprocessor.MusicDownloadProcessor;
-import twitter4j.Status;
-import twitter4j.StatusUpdate;
-import twitter4j.Twitter;
-import twitter4j.TwitterFactory;
-import twitter4j.UploadedMedia;
+import twitter4j.*;
 import twitter4j.conf.ConfigurationBuilder;
 
 /**
@@ -92,7 +80,7 @@ public class MainController extends ApplicationAdapter {
 
 	private FreeTypeFontGenerator generator;
 	private BitmapFont systemfont;
-	private BitmapFont updatefont;
+	private MessageRenderer messageRenderer;
 
 	private MainState current;
 	private static MainState currentState;
@@ -322,6 +310,11 @@ public class MainController extends ApplicationAdapter {
 		FreeTypeFontParameter parameter = new FreeTypeFontParameter();
 		parameter.size = 24;
 		systemfont = generator.generateFont(parameter);
+		messageRenderer = new MessageRenderer();
+
+		if(ir != null) {
+			messageRenderer.addMessage(player.getIrname() + " Connection Succeed : " + player.getUserid() ,3000, Color.GREEN, 1);
+		}
 
 		input = new BMSPlayerInputProcessor(config, player);
 		switch(config.getAudioDriver()) {
@@ -386,7 +379,7 @@ public class MainController extends ApplicationAdapter {
 		Gdx.gl.glClearColor(0, 0, 0, 1);
 
 		if (config.isEnableIpfs()) {
-			download = new MusicDownloadProcessor(config.getIpfspath(), (md5) -> {
+			download = new MusicDownloadProcessor(config.getIpfsUrl(), (md5) -> {
 				SongData[] s = getSongDatabase().getSongDatas(md5);
 				String[] result = new String[s.length];
 				for(int i = 0;i < result.length;i++) {
@@ -446,36 +439,15 @@ public class MainController extends ApplicationAdapter {
 
 			sprite.end();
 		}
-		// show screenshot status
-		if (screenshot != null && screenshot.savetime + 2000 > System.currentTimeMillis()) {
-			sprite.begin();
-			systemfont.setColor(Color.GOLD);
-			systemfont.draw(sprite, "Screen shot saved : " + screenshot.path, 100,
-					config.getResolution().height - 2);
-			sprite.end();
-		} else if (twitterUpload != null && twitterUpload.savetime + 2000 > System.currentTimeMillis()) {
-			sprite.begin();
-			systemfont.setColor(Color.GOLD);
-			systemfont.draw(sprite, "Twitter Upload : " + twitterUpload.text, 100,
-					config.getResolution().height - 2);
-			sprite.end();
-		} else if(updateSong != null && updateSong.isAlive()) {
-			if(currentState instanceof MusicSelector) {
-				sprite.begin();
-				updatefont.setColor(0,1,1,0.5f + (System.currentTimeMillis() % 750) / 1000.0f);
-				updatefont.draw(sprite, updateSong.message, 100, config.getResolution().height - 2);
-				sprite.end();
-			}
-		}else if(download != null && download.isDownload()){
-			if (updatefont == null) {
-				downloadIpfsMessageRenderer(download.getMessage());
-			}
-			if(currentState instanceof MusicSelector) {
-				sprite.begin();
-				updatefont.setColor(0, 1, 1, 0.5f + (System.currentTimeMillis() % 750) / 1000.0f);
-				updatefont.draw(sprite, download.getMessage(), 100, config.getResolution().height - 2);
-				sprite.end();
-			}
+
+		// show message
+		sprite.begin();
+		messageRenderer.render(current, sprite, 100, config.getResolution().height - 2);
+		sprite.end();
+
+		// TODO renderループに入れるのではなく、MusicDownloadProcessorのListenerとして実装したほうがいいのでは
+		if(download != null && download.isDownload()){
+			downloadIpfsMessageRenderer(download.getMessage());
 		}
 
 		final long time = System.currentTimeMillis();
@@ -538,7 +510,7 @@ public class MainController extends ApplicationAdapter {
             // screen shot
             if (input.getFunctionstate()[5] && input.getFunctiontime()[5] != 0) {
                 if (screenshot == null || screenshot.savetime != 0) {
-                    screenshot = new ScreenShotThread(ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
+                    screenshot = new ScreenShotThread(messageRenderer, ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
                             Gdx.graphics.getBackBufferHeight(), true));
                     screenshot.start();
                 }
@@ -547,7 +519,7 @@ public class MainController extends ApplicationAdapter {
 
             if (input.getFunctionstate()[6] && input.getFunctiontime()[6] != 0) {
                 if (twitterUpload == null || twitterUpload.savetime != 0) {
-                	twitterUpload = new TwitterUploadThread(ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
+                	twitterUpload = new TwitterUploadThread(messageRenderer, ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
                             Gdx.graphics.getBackBufferHeight(), false), player);
                 	twitterUpload.start();
                 }
@@ -558,6 +530,10 @@ public class MainController extends ApplicationAdapter {
             	this.updateSong(download.getDownloadpath());
             	download.setDownloadpath(null);
             }
+			if (updateSong != null && !updateSong.isAlive()) {
+				selector.getBarRender().updateBar();
+				updateSong = null;
+			}
         }
 	}
 
@@ -760,7 +736,10 @@ public class MainController extends ApplicationAdapter {
 		 */
 		private final byte[] pixels;
 
-		public ScreenShotThread(byte[] pixels) {
+		private final MessageRenderer message;
+
+		public ScreenShotThread(MessageRenderer message, byte[] pixels) {
+			this.message = message;
 			this.pixels = pixels;
 			final SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd_HHmmss");
 			String stateName = "";
@@ -811,6 +790,8 @@ public class MainController extends ApplicationAdapter {
 			pixmap.dispose();
 			Logger.getGlobal().info("スクリーンショット保存:" + path);
 			savetime = System.currentTimeMillis();
+
+			message.addMessage("Screen shot saved : " + path, 2000, Color.GOLD, 0);
 		}
 	}
 
@@ -836,7 +817,10 @@ public class MainController extends ApplicationAdapter {
 		 */
 		private final byte[] pixels;
 
-		public TwitterUploadThread(byte[] pixels, PlayerConfig player) {
+		private final MessageRenderer message;
+
+		public TwitterUploadThread(MessageRenderer message, byte[] pixels, PlayerConfig player) {
+			this.message = message;
 			this.pixels = pixels;
 			this.player = player;
 			java.lang.StringBuilder builder = new java.lang.StringBuilder();
@@ -916,6 +900,7 @@ public class MainController extends ApplicationAdapter {
 				Status status = twitter.updateStatus(update);
 				Logger.getGlobal().info("Twitter Post:" + status.toString());
 				savetime = System.currentTimeMillis();
+				message.addMessage( "Twitter Upload : " + text, 2000, Color.YELLOW, 0);
 			} catch (Exception e) {
 				e.printStackTrace();
 			} finally {
@@ -950,25 +935,15 @@ public class MainController extends ApplicationAdapter {
 		if (downloadIpfs == null || !downloadIpfs.isAlive()) {
 			downloadIpfs = new DownloadMessageThread(message);
 			downloadIpfs.start();
-		} else {
-			Logger.getGlobal().warning("楽曲ダウンロード中です");
 		}
 	}
 
 	abstract class UpdateThread extends Thread {
 
-		private String message;
+		protected String message;
 
 		public UpdateThread(String message) {
 			this.message = message;
-			FreeTypeFontParameter parameter = new FreeTypeFontParameter();
-			parameter.size = 24;
-			parameter.characters += message;
-			if(updatefont != null) {
-				updatefont.dispose();
-			}
-			updatefont = generator.generateFont(parameter);
-
 		}
 	}
 
@@ -987,7 +962,9 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		public void run() {
+			Message message = messageRenderer.addMessage(this.message, Color.CYAN, 1);
 			getSongDatabase().updateSongDatas(path, false, getInfoDatabase());
+			message.stop();
 		}
 	}
 
@@ -1006,11 +983,13 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		public void run() {
+			Message message = messageRenderer.addMessage(this.message, Color.CYAN, 1);
 			TableData td = accessor.getAccessor().read();
 			if (td != null) {
 				accessor.getAccessor().write(td);
 				accessor.setTableData(td);
 			}
+			message.stop();
 		}
 	}
 
@@ -1020,13 +999,16 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		public void run() {
+			Message message = messageRenderer.addMessage(this.message, Color.LIME, 1);
 			while (download != null && download.isDownload() && download.getMessage() != null) {
+				message.setText(download.getMessage());
 				try {
 					sleep(100);
 				} catch (InterruptedException e) {
 					e.printStackTrace();
 				}
 			}
+			message.stop();
 		}
 	}
 
@@ -1076,6 +1058,108 @@ public class MainController extends ApplicationAdapter {
 				paths.add(p.getParent());
 			}
 
+		}
+	}
+
+	/**
+	 * メッセージ描画用クラス。
+	 *
+	 * @author exch
+	 */
+	public static class MessageRenderer implements Disposable  {
+
+		private FreeTypeFontGenerator generator;
+		private final Array<Message> messages = new Array<Message>();
+
+		public MessageRenderer() {
+			generator = new FreeTypeFontGenerator(Gdx.files.internal("skin/default/VL-Gothic-Regular.ttf"));
+		}
+
+		public void render(MainState state, SpriteBatch sprite, int x, int y) {
+			for(int i = messages.size - 1, dy = 0;i >= 0;i--) {
+				final Message message = messages.get(i);
+
+				if(message.time < System.currentTimeMillis()) {
+					message.dispose();
+					messages.removeIndex(i);
+				} else {
+					message.draw(state, sprite, x, y - dy);
+					dy+=24;
+				}
+			}
+		}
+
+		public Message addMessage(String text, Color color, int type) {
+			return addMessage(text, 24 * 60 * 60 * 1000 , color, type);
+		}
+
+		public Message addMessage(String text, int time, Color color, int type) {
+			Message message = new Message(text, time, color, type);
+			Gdx.app.postRunnable(() -> {
+				message.init(generator);
+				messages.add(message);
+			});
+			return message;
+		}
+
+		@Override
+		public void dispose() {
+			generator.dispose();
+		}
+	}
+
+	/**
+	 * MessageRendererで描画されるメッセージ
+	 *
+	 * @author exch
+	 */
+	public static class Message implements Disposable {
+
+		private BitmapFont font;
+		private long time;
+		private String text;
+		private final Color color;
+		private final int type;
+
+		public Message(String text, long time, Color color, int type) {
+			this.time = time + System.currentTimeMillis();
+			this.text = text;
+			this.color = color;
+			this.type = type;
+		}
+
+		public void init(FreeTypeFontGenerator generator) {
+			FreeTypeFontParameter parameter = new FreeTypeFontParameter();
+			parameter.size = 24;
+			parameter.characters += text;
+			font = generator.generateFont(parameter);
+			font.setColor(color);
+		}
+
+		public void setText(String text) {
+			this.text = text;
+		}
+
+		public void stop() {
+			time = -1;
+		}
+
+		public void draw(MainState state, SpriteBatch sprite, int x, int y) {
+			switch(type) {
+			case 0:
+				break;
+			case 1:
+				if(state instanceof MusicSelector) {
+					font.setColor(color.r, color.g, color.b, MathUtils.sinDeg((System.currentTimeMillis() % 1440) / 4.0f) * 0.3f + 0.7f);
+					font.draw(sprite, text, x, y);
+				}
+				break;
+			}
+		}
+
+		@Override
+		public void dispose() {
+			font.dispose();
 		}
 	}
 }

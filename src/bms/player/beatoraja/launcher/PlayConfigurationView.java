@@ -281,7 +281,7 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private CheckBox enableIpfs;
 	@FXML
-    private TextField ipfspath;
+	private TextField ipfsurl;
 
 	@FXML
 	private VBox skin;
@@ -299,6 +299,8 @@ public class PlayConfigurationView implements Initializable {
 
 	@FXML
 	private ComboBox<String> irname;
+	@FXML
+	private Hyperlink irhome;
 	@FXML
 	private TextField iruserid;
 	@FXML
@@ -364,6 +366,7 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(audioFastForward, audioPlaySpeedControls);
 
 		irname.getItems().setAll(IRConnection.getAllAvailableIRConnectionName());
+		irname.getItems().add(null);
 
 		players.getItems().setAll(PlayerConfig.readAllPlayerID());
 
@@ -470,7 +473,7 @@ public class PlayConfigurationView implements Initializable {
 		scrolldurationhigh.getValueFactory().setValue(config.getScrollDurationHigh());
 
 		enableIpfs.setSelected(config.isEnableIpfs());
-		ipfspath.setText(config.getIpfspath());
+		ipfsurl.setText(config.getIpfsUrl());
 
 		updateAudioDriver();
 
@@ -546,6 +549,7 @@ public class PlayConfigurationView implements Initializable {
 		target.setValue(player.getTarget());
 
 		irname.setValue(player.getIrname());
+		updateIRConnection();
 		iruserid.setText(player.getUserid());
 		irpassword.setText(player.getPassword());
 		irsend.setValue(player.getIrsend());
@@ -608,7 +612,7 @@ public class PlayConfigurationView implements Initializable {
 		config.setScrollDutationHigh(getValue(scrolldurationhigh));
 
 		config.setEnableIpfs(enableIpfs.isSelected());
-		config.setIpfspath(ipfspath.getText());
+		config.setIpfsUrl(ipfsurl.getText());
 
 		commitPlayer();
 
@@ -740,14 +744,6 @@ public class PlayConfigurationView implements Initializable {
     	String s = showDirectoryChooser("効果音のルートフォルダを選択してください");
     	if(s != null) {
     		soundpath.setText(s);
-    	}
-	}
-
-    @FXML
-	public void addIpfsPath() {
-    	String s = showFileChooser("IPFSのアプリケーションを選択してください");
-    	if(s != null) {
-    		ipfspath.setText(s);
     	}
 	}
 
@@ -926,7 +922,23 @@ public class PlayConfigurationView implements Initializable {
 		loadBMS(null, false);
 	}
 
-    public void loadBMSPath(String updatepath){
+	@FXML
+	public void updateIRConnection() {
+    	String homeurl = IRConnection.getHomeURL(irname.getValue());
+		irhome.setText(homeurl);
+		irhome.setOnAction((event) -> {
+            Desktop desktop = Desktop.getDesktop();
+            URI uri;
+            try {
+                uri = new URI(homeurl);
+                desktop.browse(uri);
+            } catch (Exception e) {
+                Logger.getGlobal().warning("最新版URLアクセス時例外:" + e.getMessage());
+            }
+        });
+	}
+
+	public void loadBMSPath(String updatepath){
     	loadBMS(updatepath, false);
 	}
 

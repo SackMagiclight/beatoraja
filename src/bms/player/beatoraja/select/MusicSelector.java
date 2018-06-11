@@ -7,7 +7,10 @@ import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
+import java.util.List;
 import java.util.logging.Logger;
 
 import com.badlogic.gdx.Gdx;
@@ -122,49 +125,44 @@ public class MusicSelector extends MainState {
 			}
 		};
 
-		try {
-			// ライバルスコアデータベース作成
-			// TODO 別のクラスに移動
-			if(!Files.exists(Paths.get("rival"))) {
-				Files.createDirectory(Paths.get("rival"));
-			}
-			if(main.getIRConnection() != null) {
-				IRResponse<PlayerInformation[]> response = main.getIRConnection().getRivals();
-				if(response.isSuccessed()) {
-					for(PlayerInformation rival : response.getData()) {
-						new Thread(() -> {
-							try {
-								final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor("rival/" + rival.getId() + ".db");
-								scoredb.createTable();
-								scoredb.setInformation(rival);
-								IRResponse<IRScoreData[]> scores = main.getIRConnection().getPlayData(rival.getId(), null);
-								if(scores.isSuccessed()) {
-									scoredb.setScoreData(scores.getData());
-									Logger.getGlobal().info("IRからのスコア取得完了 : " + rival.getName());
-								} else {
-									Logger.getGlobal().warning("IRからのスコア取得失敗 : " + scores.getMessage());
-								}
-							} catch (ClassNotFoundException e) {
-								e.printStackTrace();
-							};
-						}).start();
+		if(main.getIRConnection() != null) {
+			IRResponse<PlayerInformation[]> response = main.getIRConnection().getRivals();
+			if(response.isSuccessed()) {
+				try {
+					// ライバルスコアデータベース作成
+					// TODO 別のクラスに移動
+					if(!Files.exists(Paths.get("rival"))) {
+						Files.createDirectory(Paths.get("rival"));
 					}
-				} else {
-					Logger.getGlobal().warning("IRからのライバル取得失敗 : " + response.getMessage());
-				}
-			}
-		} catch (Throwable e) {
-			e.printStackTrace();
-		}
+					
+					// ライバルキャッシュ作成
+					try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get("rival"))) {
+						for (Path p : paths) {
+							if(p.toString().endsWith(".db")) {
+								final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor(p.toString());
+								PlayerInformation info = scoredb.getInformation();
+								if(info != null) {
+									rivalcaches.put(info,  new ScoreDataCache() {
 
-		// ライバルキャッシュ作成
-		try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get("rival"))) {
-			for (Path p : paths) {
-				if(p.toString().endsWith(".db")) {
-					final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor(p.toString());
-					PlayerInformation info = scoredb.getInformation();
-					if(info != null) {
-						rivalcaches.put(info,  new ScoreDataCache() {
+										@Override
+										protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
+											return scoredb.getScoreData(song.getSha256(), song.hasUndefinedLongNote() ? lnmode : 0);
+										}
+
+										protected void readScoreDatasFromSource(ScoreDataCollector collector, SongData[] songs, int lnmode) {
+											scoredb.getScoreDatas(collector,songs, lnmode);
+										}
+									});
+								}
+							}
+						}
+					} catch (Throwable e) {
+						e.printStackTrace();
+					}
+					
+					for(PlayerInformation rival : response.getData()) {
+						final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor("rival/" + config.getIrname() + rival.getId() + ".db");
+						rivalcaches.put(rival,  new ScoreDataCache() {
 
 							@Override
 							protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
@@ -175,11 +173,25 @@ public class MusicSelector extends MainState {
 								scoredb.getScoreDatas(collector,songs, lnmode);
 							}
 						});
+						new Thread(() -> {
+							scoredb.createTable();
+							scoredb.setInformation(rival);
+							IRResponse<IRScoreData[]> scores = main.getIRConnection().getPlayData(rival.getId(), null);
+							if(scores.isSuccessed()) {
+								scoredb.setScoreData(scores.getData());
+								Logger.getGlobal().info("IRからのスコア取得完了 : " + rival.getName());
+							} else {
+								Logger.getGlobal().warning("IRからのスコア取得失敗 : " + scores.getMessage());
+							}
+						}).start();
 					}
+
+				} catch (Throwable e) {
+					e.printStackTrace();
 				}
+			} else {
+				Logger.getGlobal().warning("IRからのライバル取得失敗 : " + response.getMessage());
 			}
-		} catch (Throwable e) {
-			e.printStackTrace();
 		}
 
 		bar = new BarRenderer(this);
@@ -193,7 +205,7 @@ public class MusicSelector extends MainState {
 
 	public void setRival(PlayerInformation rival) {
 		this.rival = rival;
-		rivalcache = rivalcaches.get(rival);
+		rivalcache = rival != null ? rivalcaches.get(rival) : null;
 		bar.updateBar();
 
 		Logger.getGlobal().info("Rival変更:" + (rival != null ? rival.getName() : "なし"));
@@ -269,6 +281,7 @@ public class MusicSelector extends MainState {
 		}
 		// draw song information
 		resource.setSongdata(current instanceof SongBar ? ((SongBar) current).getSongData() : null);
+		resource.setCourseData(current instanceof GradeBar ? ((GradeBar) current).getCourseData() : null);
 
 		// preview music
 		if (current instanceof SongBar) {
@@ -298,11 +311,18 @@ public class MusicSelector extends MainState {
 					resource.clear();
 					if (resource.setBMSFile(Paths.get(song.getPath()), play)) {
 						final Deque<DirectoryBar> dir = this.getBarRender().getDirectory();
+						List<String> urls = Arrays.asList(main.getConfig().getTableURL());
+
+						boolean isdtable = false;
 						for(DirectoryBar bar: dir){
-							if(bar instanceof TableBar){
-								resource.setTablename(bar.getTitle());
+							if (bar instanceof TableBar) {
+								String currenturl = ((TableBar) bar).getUrl();
+								if (currenturl != null && urls.contains(currenturl)) {
+									isdtable = true;
+									resource.setTablename(bar.getTitle());
+								}
 							}
-							if(bar instanceof HashBar){
+							if (bar instanceof HashBar && isdtable) {
 								resource.setTablelevel(bar.getTitle());
 								break;
 							}
@@ -911,5 +931,27 @@ public class MusicSelector extends MainState {
 		} else {
 			play = (selectedreplay >= 0) ? PlayMode.getReplayMode(selectedreplay) : PlayMode.PLAY;
 		}
+	}
+
+	public PlayConfig getSelectedBarPlayConfig() {
+		Bar current = bar.getSelected();
+		PlayConfig pc = null;
+		if (current instanceof SongBar && ((SongBar)current).existsSong()) {
+			SongBar song = (SongBar) current;
+			pc = main.getPlayerConfig().getPlayConfig(song.getSongData().getMode()).getPlayconfig();
+		} else if(current instanceof GradeBar && ((GradeBar)current).existsAllSongs()) {
+			GradeBar grade = (GradeBar)current;
+			for(SongData song : grade.getSongDatas()) {
+				PlayConfig pc2 = main.getPlayerConfig().getPlayConfig(song.getMode()).getPlayconfig();
+				if(pc == null) {
+					pc = pc2;
+				}
+				if(pc != pc2) {
+					pc = null;
+					break;
+				}
+			}
+		}
+		return pc;
 	}
 }

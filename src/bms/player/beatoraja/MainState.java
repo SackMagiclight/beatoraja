@@ -19,7 +19,7 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 
 /**
  * プレイヤー内の各状態の抽象クラス
- * 
+ *
  * @author exch
  */
 public abstract class MainState {
@@ -112,16 +112,6 @@ public abstract class MainState {
 			return model != null && model.getDifficulty() == 4;
 		case OPTION_DIFFICULTY5:
 			return model != null && model.getDifficulty() == 5;
-		case OPTION_JUDGE_VERYEASY:
-			return model != null && (model.getJudge() == 4 || model.getJudge() >= 110);
-		case OPTION_JUDGE_EASY:
-			return model != null && (model.getJudge() == 3 || (model.getJudge() >= 90 && model.getJudge() < 110));
-		case OPTION_JUDGE_NORMAL:
-			return model != null && (model.getJudge() == 2 || (model.getJudge() >= 70 && model.getJudge() < 90));
-		case OPTION_JUDGE_HARD:
-			return model != null && (model.getJudge() == 1 || (model.getJudge() >= 50 && model.getJudge() < 70));
-		case OPTION_JUDGE_VERYHARD:
-			return model != null && (model.getJudge() == 0 || (model.getJudge() >= 10 && model.getJudge() < 50));
 		case OPTION_NO_TEXT:
 			return model != null && !model.hasDocument();
 		case OPTION_TEXT:
@@ -470,6 +460,8 @@ public abstract class MainState {
 				return song != null ? resource.getTablename() : "";
 			case STRING_TABLE_LEVEL:
 				return song != null ? resource.getTablelevel() : "";
+			case STRING_TABLE_FULL:
+				return song != null ? resource.getTableFullname() : "";
 			}
 		}
 		return "";
@@ -506,6 +498,25 @@ public abstract class MainState {
 				SongData song = main.getPlayerResource().getSongdata();
 				PlayConfig pc = main.getPlayerResource().getPlayerConfig().getPlayConfig(song.getMode()).getPlayconfig();
 				return pc.getFixhispeed();
+			} else if(main.getPlayerResource().getCourseData() != null) {
+				PlayConfig pc = null;
+				for(SongData song : main.getPlayerResource().getCourseData().getSong()) {
+					if(song.getPath() == null) {
+						pc = null;
+						break;
+					}
+					PlayConfig pc2 = main.getPlayerConfig().getPlayConfig(song.getMode()).getPlayconfig();
+					if(pc == null) {
+						pc = pc2;
+					}
+					if(pc != pc2) {
+						pc = null;
+						break;
+					}
+				}
+				if(pc != null) {
+					return pc.getFixhispeed();
+				}
 			}
 			return Integer.MIN_VALUE;
 		case BUTTON_BGA:
