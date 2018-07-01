@@ -133,8 +133,8 @@ public class PlayerResource {
 		combo = 0;
 		maxcombo = 0;
 		bmsPaths = null;
-		tablename = "";
-		tablelevel = "";
+		setTablename("");
+		setTablelevel("");
 	}
 
 	public boolean setBMSFile(final Path f, PlayMode mode) {
@@ -150,7 +150,11 @@ public class PlayerResource {
 		}
 
 		bmsresource.setBMSFile(model, f, config, mode);
-		songdata = new SongData(model, false);
+		if(songdata != null) {
+			songdata.setBMSModel(model);
+		} else {
+			songdata = new SongData(model, false);			
+		}
 		if(tablename.length() == 0 || courseindex != 0){
 			setTableinfo();
 		}
@@ -297,6 +301,7 @@ public class PlayerResource {
 					return false;
 				}
 			}
+			songdata = null;
 			if(setBMSFile(bmsPaths[courseindex++], PlayMode.AUTOPLAY)) {
 				return true;
 			};
@@ -309,6 +314,7 @@ public class PlayerResource {
 		if (courseindex == course.length) {
 			return false;
 		} else {
+			songdata = null;
 			setBMSFile(Paths.get(course[courseindex].getPath()), mode);
 			return true;
 		}
