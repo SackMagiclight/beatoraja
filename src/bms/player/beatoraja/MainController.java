@@ -32,6 +32,7 @@ import bms.player.beatoraja.config.KeyConfiguration;
 import bms.player.beatoraja.config.SkinConfiguration;
 import bms.player.beatoraja.decide.MusicDecide;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
+import bms.player.beatoraja.input.KeyCommand;
 import bms.player.beatoraja.ir.IRConnection;
 import bms.player.beatoraja.ir.IRResponse;
 import bms.player.beatoraja.play.BMSPlayer;
@@ -55,7 +56,7 @@ import twitter4j.conf.ConfigurationBuilder;
  */
 public class MainController extends ApplicationAdapter {
 
-	public static final String VERSION = "beatoraja 0.5.6";
+	public static final String VERSION = "beatoraja 0.6.1";
 
 	private static final boolean debug = true;
 
@@ -312,10 +313,6 @@ public class MainController extends ApplicationAdapter {
 		systemfont = generator.generateFont(parameter);
 		messageRenderer = new MessageRenderer();
 
-		if(ir != null) {
-			messageRenderer.addMessage(player.getIrname() + " Connection Succeed : " + player.getUserid() ,3000, Color.GREEN, 1);
-		}
-
 		input = new BMSPlayerInputProcessor(config, player);
 		switch(config.getAudioDriver()) {
 		case Config.AUDIODRIVER_SOUND:
@@ -388,6 +385,10 @@ public class MainController extends ApplicationAdapter {
 				return result;
 			});
 			download.start(null);
+		}
+		
+		if(ir != null) {
+			messageRenderer.addMessage(player.getIrname() + " Connection Succeed : " + player.getUserid() ,5000, Color.GREEN, 1);
 		}
 	}
 
@@ -473,12 +474,11 @@ public class MainController extends ApplicationAdapter {
 			Mouse.setGrabbed(current == bmsplayer && time > mouseMovedTime + 5000 && Mouse.isInsideWindow());
 
 			// FPS表示切替
-            if (input.getFunctionstate()[0] && input.getFunctiontime()[0] != 0) {
+            if (input.isActivated(KeyCommand.SHOW_FPS)) {
                 showfps = !showfps;
-                input.getFunctiontime()[0] = 0;
             }
             // fullscrees - windowed
-            if (input.getFunctionstate()[3] && input.getFunctiontime()[3] != 0) {
+            if (input.isActivated(KeyCommand.SWITCH_SCREEN_MODE)) {
                 boolean fullscreen = Gdx.graphics.isFullscreen();
                 Graphics.DisplayMode currentMode = Gdx.graphics.getDisplayMode();
                 if (fullscreen) {
@@ -487,7 +487,6 @@ public class MainController extends ApplicationAdapter {
                     Gdx.graphics.setFullscreenMode(currentMode);
                 }
                 config.setDisplaymode(fullscreen ? Config.DisplayMode.WINDOW : Config.DisplayMode.FULLSCREEN);
-                input.getFunctiontime()[3] = 0;
             }
 
             // if (input.getFunctionstate()[4] && input.getFunctiontime()[4] != 0) {
@@ -508,22 +507,20 @@ public class MainController extends ApplicationAdapter {
             // }
 
             // screen shot
-            if (input.getFunctionstate()[5] && input.getFunctiontime()[5] != 0) {
+            if (input.isActivated(KeyCommand.SAVE_SCREENSHOT)) {
                 if (screenshot == null || screenshot.savetime != 0) {
                     screenshot = new ScreenShotThread(messageRenderer, ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
                             Gdx.graphics.getBackBufferHeight(), true));
                     screenshot.start();
                 }
-                input.getFunctiontime()[5] = 0;
             }
 
-            if (input.getFunctionstate()[6] && input.getFunctiontime()[6] != 0) {
+            if (input.isActivated(KeyCommand.POST_TWITTER)) {
                 if (twitterUpload == null || twitterUpload.savetime != 0) {
                 	twitterUpload = new TwitterUploadThread(messageRenderer, ScreenUtils.getFrameBufferPixels(0, 0, Gdx.graphics.getBackBufferWidth(),
                             Gdx.graphics.getBackBufferHeight(), false), player);
                 	twitterUpload.start();
                 }
-                input.getFunctiontime()[6] = 0;
             }
 
 			if (download != null && download.getDownloadpath() != null) {
@@ -1145,15 +1142,9 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		public void draw(MainState state, SpriteBatch sprite, int x, int y) {
-			switch(type) {
-			case 0:
-				break;
-			case 1:
-				if(state instanceof MusicSelector) {
-					font.setColor(color.r, color.g, color.b, MathUtils.sinDeg((System.currentTimeMillis() % 1440) / 4.0f) * 0.3f + 0.7f);
-					font.draw(sprite, text, x, y);
-				}
-				break;
+			if(type != 1 || state instanceof MusicSelector) {
+				font.setColor(color.r, color.g, color.b, MathUtils.sinDeg((System.currentTimeMillis() % 1440) / 4.0f) * 0.3f + 0.7f);
+				font.draw(sprite, text, x, y);
 			}
 		}
 
