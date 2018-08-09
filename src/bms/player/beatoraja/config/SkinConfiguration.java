@@ -63,46 +63,31 @@ public class SkinConfiguration extends MainState {
 			customOptionOffset = Math.max(0, Math.min(customOptionOffsetMax, customOptionOffset + mov));
 		}
 	}
-
-	public int getImageIndex(int id) {
-		if (SkinPropertyMapper.isSkinSelectTypeId(id)) {
-			SkinType t = SkinPropertyMapper.getSkinSelectType(id);
-			return type == t ? 1 : 0;
-		}
-		return super.getImageIndex(id);
+	
+	public SkinType getSkinType() {
+		return type;
 	}
 
-	public float getSliderValue(int id) {
-		switch (id) {
-		case SLIDER_SKINSELECT_POSITION:
-			return (float)customOptionOffset / customOptionOffsetMax;
-		}
-		return super.getSliderValue(id);
+	public float getSkinSelectPosition() {
+		return (float)customOptionOffset / customOptionOffsetMax;		
 	}
-
-	public String getTextValue(int id) {
-		switch (id) {
-		case STRING_SKIN_NAME:
-			return selectedSkinHeader != null ? selectedSkinHeader.getName() : "";
-		case STRING_SKIN_AUTHOR:
-			return selectedSkinHeader != null ? "" : "";
-		default:
-			if (SkinPropertyMapper.isSkinCustomizeCategory(id)) {
-				int index = SkinPropertyMapper.getSkinCustomizeCategoryIndex(id);
-				if (customOptions != null && index + customOptionOffset < customOptions.size()) {
-					return customOptions.get(index + customOptionOffset).getCategoryName();
-				}
-				return "";
-			}
-			if (SkinPropertyMapper.isSkinCustomizeItem(id)) {
-				int index = SkinPropertyMapper.getSkinCustomizeItemIndex(id);
-				if (customOptions != null && index + customOptionOffset < customOptions.size()) {
-					return customOptions.get(index + customOptionOffset).getDisplayValue();
-				}
-				return "";
-			}
+	
+	public String getCategoryName(int index) {
+		if (customOptions != null && index + customOptionOffset < customOptions.size()) {
+			return customOptions.get(index + customOptionOffset).getCategoryName();
 		}
-		return super.getTextValue(id);
+		return "";		
+	}
+	
+	public String getDisplayValue(int index) {
+		if (customOptions != null && index + customOptionOffset < customOptions.size()) {
+			return customOptions.get(index + customOptionOffset).getDisplayValue();
+		}
+		return "";		
+	}
+	
+	public SkinHeader getSelectedSkinHeader() {
+		return selectedSkinHeader;
 	}
 
 	public void executeClickEvent(int id, int arg) {

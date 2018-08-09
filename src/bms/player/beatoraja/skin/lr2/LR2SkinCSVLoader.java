@@ -7,6 +7,7 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.SkinConfig.Offset;
+import bms.player.beatoraja.play.PlaySkin;
 import bms.player.beatoraja.play.SkinGauge;
 import bms.player.beatoraja.play.bga.BGAProcessor;
 import bms.player.beatoraja.select.MusicSelectSkin;
@@ -313,6 +314,10 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				text.setEditable(values[5] != 0);
 				int panel = values[6];
 				skin.add(text);
+				if(text.isEditable() && values[3] == SkinProperty.STRING_SEARCHWORD && skin instanceof MusicSelectSkin) {
+					((MusicSelectSkin) skin).searchText = text;
+				}
+
 				// System.out.println("Text Added - " +
 				// (values[3]));
 			}
@@ -327,7 +332,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 							values[6] * dsth / srch, values[7], values[8], values[9], values[10], values[11],
 							values[12], values[13], values[14], values[15], values[16], values[17], values[18],
 							values[19], values[20], readOffset(str, 21));
-					if(text.isEditable() && text.getReferenceID() == SkinProperty.STRING_SEARCHWORD && skin instanceof MusicSelectSkin) {
+					if(skin instanceof MusicSelectSkin && ((MusicSelectSkin) skin).searchText == text) {
 						Rectangle r = new Rectangle(values[3] * dstw / srcw,
 								dsth - (values[4] + values[6]) * dsth / srch, values[5] * dstw / srcw,
 								values[6] * dsth / srch);
@@ -349,6 +354,12 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 							values[13]);
 					slider.setChangable(values[14] == 0);
 					skin.add(slider);
+					
+					// TODO 固有実装の汎用化
+					if((skin instanceof PlaySkin) && values[13] == SLIDER_LANECOVER) {
+						((PlaySkin)skin).laneCover = slider;
+					}
+
 					// System.out.println("Object Added - " +
 					// (part.getTiming()));
 				}

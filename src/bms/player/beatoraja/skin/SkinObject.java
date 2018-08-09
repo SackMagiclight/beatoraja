@@ -244,7 +244,7 @@ public abstract class SkinObject implements Disposable {
 		Array<BooleanProperty> draw = new Array(dstop.length);
 		for(int i : dstop) {
 			if(i != 0 && !l.contains(i)) {
-				BooleanProperty dc = SkinPropertyMapper.getBooleanProperty(i);
+				BooleanProperty dc = BooleanPropertyFactory.getBooleanProperty(i);
 				if(dc != null) {
 					draw.add(dc);
 				} else {
@@ -724,14 +724,14 @@ public abstract class SkinObject implements Disposable {
 		private final int max;
 		
 		public RateProperty(int type, int min, int max) {
-			this.ref = SkinPropertyMapper.getIntegerProperty(type);
+			this.ref = IntegerPropertyFactory.getIntegerProperty(type);
 			this.type = type;
 			this.min = min;
 			this.max = max;
 		}
 		
 		public float get(MainState state) {
-			final int value = ref != null ? ref.get(state) : state.getNumberValue(type);
+			final int value = ref != null ? ref.get(state) : 0;
 			if(min < max) {
 				if(value > max) {
 					return 1;

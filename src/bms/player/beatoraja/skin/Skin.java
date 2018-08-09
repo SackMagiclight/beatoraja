@@ -179,41 +179,13 @@ public class Skin {
 				for(int op : obj.getOption()) {
 					if(op > 0) {
 						final int value = option.get(op, -1);
-						if(value == 0) {
+						if(value != 1) {
 							removes.add(obj);						
-						} else if(value == -1){
-							boolean fix = false;
-							for(int fop : fixopt) {
-								if(op == fop) {
-									fix = true;
-									if(!state.getBooleanValue(op)) {
-										removes.add(obj);						
-									}							
-									break;
-								}
-							}
-							if(!fix) {
-								l.add(op);
-							}
-						}					
+						}				
 					} else {
 						final int value = option.get(-op, -1);
-						if(value == 1) {
+						if(value != 0) {
 							removes.add(obj);						
-						} else if(value == -1){
-							boolean fix = false;
-							for(int fop : fixopt) {
-								if(-op == fop) {
-									fix = true;
-									if(state.getBooleanValue(-op)) {
-										removes.add(obj);						
-									}							
-									break;
-								}
-							}
-							if(!fix) {
-								l.add(op);
-							}
 						}
 					}				
 				}
@@ -253,17 +225,6 @@ public class Skin {
 		for (BooleanProperty draw : obj.getDrawCondition()) {
 			if(!draw.get(state)) {
 				return false;
-			}
-		}
-		for (int op : obj.getOption()) {
-			if (op > 0) {
-				if (!state.getBooleanValue(op)) {
-					return false;
-				}
-			} else {
-				if (state.getBooleanValue(-op)) {
-					return false;
-				}				
 			}
 		}
 		return true;
@@ -490,22 +451,6 @@ public class Skin {
 		public void setColor(Color color) {
 			this.color = color;
 		}
-	}
-
-	/*
-	 * 白数字が0の時のレーンカバーのy座標
-	 */
-	public float getLaneCoverPosition() {
-		for(SkinObject obj: objects) {
-			if(obj instanceof SkinSlider) {
-				SkinSlider slider = (SkinSlider) obj;
-				if(slider.getType() == SLIDER_LANECOVER) {
-					SkinObjectDestination[] dst = slider.getAllDestination();
-					return dst[dst.length - 1].region.y;
-				}
-			}
-		}
-		return -1;
 	}
 
 	public SkinOffset getOffsetAll(MainState state) {
