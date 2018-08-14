@@ -1,7 +1,12 @@
 package bms.player.beatoraja.skin.lr2;
 
 import java.io.*;
+import java.nio.charset.Charset;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
+
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import bms.model.Mode;
@@ -42,6 +47,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 	 */
 	public final Resolution dst;
 	private boolean usecim;
+	private String skinpath;
 
 	protected S skin;
 
@@ -51,6 +57,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		this.src = src;
 		this.dst = c.getResolution();
 		usecim = c.isCacheSkinImage();
+		skinpath = c.getSkinpath();
 
 		final float srcw = src.width;
 		final float srch = src.height;
@@ -79,7 +86,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		addCommandWord(new CommandWord("INCLUDE") {
 			@Override
 			public void execute(String[] str) {
-				final File imagefile = SkinLoader.getPath(str[1].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+				final File imagefile = LR2SkinLoader.getPath(skinpath, str[1], filemap);
 				if (imagefile.exists()) {
 					try (BufferedReader br = new BufferedReader(
 							new InputStreamReader(new FileInputStream(imagefile), "MS932"));) {
@@ -96,7 +103,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		addCommandWord(new CommandWord("IMAGE") {
 			@Override
 			public void execute(String[] str) {
-				final File imagefile = SkinLoader.getPath(str[1].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+				final File imagefile = LR2SkinLoader.getPath(skinpath, str[1], filemap);
 				if (imagefile.exists()) {
 					boolean isMovie = false;
 					for (String mov : BGAProcessor.mov_extension) {
@@ -130,7 +137,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		addCommandWord(new CommandWord("LR2FONT") {
 			@Override
 			public void execute(String[] str) {
-				final File imagefile = SkinLoader.getPath(str[1].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+				final File imagefile = LR2SkinLoader.getPath(skinpath, str[1], filemap);
 				if (imagefile.exists()) {
 					LR2FontLoader font = new LR2FontLoader(usecim);
 					try {
@@ -738,7 +745,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 					values[2] += values[4];
 					values[4] = -values[4];
 				}
-				final File imagefile = SkinLoader.getPath(str[7].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+				final File imagefile = LR2SkinLoader.getPath(skinpath, str[7], filemap);
 				new PomyuCharaLoader(skin).load(usecim, imagefile,
 						0, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
 						values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
@@ -759,7 +766,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 					values[2] += values[4];
 					values[4] = -values[4];
 				}
-				final File imagefile = SkinLoader.getPath(str[7].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+				final File imagefile = LR2SkinLoader.getPath(skinpath, str[7], filemap);
 				new PomyuCharaLoader(skin).load(usecim, imagefile,
 						0, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
 						values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
@@ -782,7 +789,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 						values[2] += values[4];
 						values[4] = -values[4];
 					}
-					final File imagefile = SkinLoader.getPath(str[12].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+					final File imagefile = LR2SkinLoader.getPath(skinpath, str[12], filemap);
 					new PomyuCharaLoader(skin).load(usecim, imagefile,
 							values[6] + 6, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
 							values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
@@ -798,7 +805,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				PMcharaPart = null;
 				int[] values = parseInt(str);
 				if(values[2] >= 0 && values[2] <= 4) {
-					final File imagefile = SkinLoader.getPath(str[3].replace("LR2files\\Theme", "skin").replace("\\", "/"), filemap);
+					final File imagefile = LR2SkinLoader.getPath(skinpath, str[3], filemap);
 					PMcharaPart = new PomyuCharaLoader(skin).load(usecim, imagefile,
 							values[2] + 1, (values[1] == 1 || values[1] == 2) ? values[1] : 1,
 							Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
@@ -837,17 +844,17 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		});
 	}
 
-	protected void loadSkin(Skin skin, File f, MainState state) throws IOException {
+	protected void loadSkin(Skin skin, Path f, MainState state) throws IOException {
 		this.loadSkin(skin, f, state, new IntIntMap());
 	}
 
-	protected void loadSkin(Skin skin, File f, MainState state, IntIntMap option) throws IOException {
+	protected void loadSkin(Skin skin, Path f, MainState state, IntIntMap option) throws IOException {
 		this.loadSkin0(skin, f, state, option);
 	}
 
 	private ObjectMap<String, String> filemap = new ObjectMap<String, String>();
 
-	protected S loadSkin(S skin, File f, MainState state, SkinHeader header, IntIntMap option,
+	protected S loadSkin(S skin, Path f, MainState state, SkinHeader header, IntIntMap option,
 			ObjectMap<String, Object> property) throws IOException {
 		this.skin = skin;
 		this.state = state;
@@ -898,18 +905,17 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 
 	int stretch = -1;
 
-	protected void loadSkin0(Skin skin, File f, MainState state, IntIntMap option) throws IOException {
+	protected void loadSkin0(Skin skin, Path f, MainState state, IntIntMap option) throws IOException {
 
-		BufferedReader br = new BufferedReader(new InputStreamReader(new FileInputStream(f), "MS932"));
-
-		while ((line = br.readLine()) != null) {
-			try {
-				processLine(line, state);
-			} catch (Throwable e) {
-				e.printStackTrace();
-			}
-		}
-		br.close();
+		try (Stream<String> lines = Files.lines(f, Charset.forName("MS932"))) {
+			lines.forEach(line -> {
+				try {
+					processLine(line, state);
+				} catch (Throwable e) {
+					e.printStackTrace();
+				}
+			});
+		};
 
 		skin.setOption(option);
 
@@ -983,7 +989,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		return images;
 	}
 
-	public S loadSkin(File f, MainState decide, SkinHeader header, IntIntMap option, SkinConfig.Property property) throws IOException {
+	public S loadSkin(Path f, MainState decide, SkinHeader header, IntIntMap option, SkinConfig.Property property) throws IOException {
 		ObjectMap m = new ObjectMap();
 		for(SkinConfig.Option op : property.getOption()) {
 			if(op.value != OPTION_RANDOM_VALUE) {
@@ -1036,7 +1042,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		return loadSkin(f, decide, header, option, m);
 	}
 
-	public abstract S loadSkin(File f, MainState decide, SkinHeader header, IntIntMap option, ObjectMap property) throws IOException;
+	public abstract S loadSkin(Path f, MainState decide, SkinHeader header, IntIntMap option, ObjectMap property) throws IOException;
 
 	public static LR2SkinCSVLoader getSkinLoader(SkinType type, Resolution src, Config c) {
 		switch(type) {
