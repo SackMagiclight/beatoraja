@@ -21,6 +21,10 @@ public class SongBar extends SelectableBar {
      * バナーデータ
      */
     private Pixmap banner;
+    /**
+     * ステージファイルデータ
+     */
+    private Pixmap stagefile;
 
     public SongBar(SongData song) {
         this.song = song;
@@ -42,9 +46,22 @@ public class SongBar extends SelectableBar {
     	this.banner = banner;
     }
 
+    public Pixmap getStagefile() {
+        return stagefile;
+    }
+
+    public void setStagefile(Pixmap stagefile) {
+    	this.stagefile = stagefile;
+    }
+
     @Override
     public String getTitle() {
         return song.getFullTitle();
+    }
+
+    @Override
+    public String getArtist() {
+        return song.getFullArtist();
     }
 
     public int getLamp(boolean isPlayer) {

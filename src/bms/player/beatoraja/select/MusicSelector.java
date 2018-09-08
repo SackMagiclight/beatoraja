@@ -1,17 +1,13 @@
 package bms.player.beatoraja.select;
 
-import static bms.player.beatoraja.ClearType.*;
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.Arrays;
-import java.util.Deque;
-import java.util.List;
+import java.nio.file.*;
+import java.util.*;
 import java.util.logging.Logger;
 
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.utils.Array;
 import com.badlogic.gdx.utils.ObjectMap;
 import com.badlogic.gdx.utils.ObjectMap.Keys;
@@ -98,6 +94,8 @@ public class MusicSelector extends MainState {
 
 	private PixmapResourcePool banners;
 
+	private PixmapResourcePool stagefiles;
+
 	public MusicSelector(MainController main, boolean songUpdated) {
 		super(main);
 		this.config = main.getPlayerResource().getPlayerConfig();
@@ -120,14 +118,14 @@ public class MusicSelector extends MainState {
 
 		if(main.getIRConnection() != null) {
 			IRResponse<PlayerInformation[]> response = main.getIRConnection().getRivals();
-			if(response.isSuccessed()) {
+			if(response.isSucceeded()) {
 				try {
 					// ライバルスコアデータベース作成
 					// TODO 別のクラスに移動
 					if(!Files.exists(Paths.get("rival"))) {
 						Files.createDirectory(Paths.get("rival"));
 					}
-					
+
 					// ライバルキャッシュ作成
 					try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get("rival"))) {
 						for (Path p : paths) {
@@ -152,7 +150,7 @@ public class MusicSelector extends MainState {
 					} catch (Throwable e) {
 						e.printStackTrace();
 					}
-					
+
 					for(PlayerInformation rival : response.getData()) {
 						final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor("rival/" + config.getIrname() + rival.getId() + ".db");
 						rivalcaches.put(rival,  new ScoreDataCache() {
@@ -170,7 +168,7 @@ public class MusicSelector extends MainState {
 							scoredb.createTable();
 							scoredb.setInformation(rival);
 							IRResponse<IRScoreData[]> scores = main.getIRConnection().getPlayData(rival.getId(), null);
-							if(scores.isSuccessed()) {
+							if(scores.isSucceeded()) {
 								scoredb.setScoreData(scores.getData());
 								Logger.getGlobal().info("IRからのスコア取得完了 : " + rival.getName());
 							} else {
@@ -189,6 +187,7 @@ public class MusicSelector extends MainState {
 
 		bar = new BarRenderer(this);
 		banners = new PixmapResourcePool(main.getConfig().getBannerPixmapGen());
+		stagefiles = new PixmapResourcePool(main.getConfig().getStagefilePixmapGen());
 		musicinput = new MusicSelectInputProcessor(this);
 
 		if (!songUpdated && main.getPlayerResource().getConfig().isUpdatesong()) {
@@ -319,6 +318,9 @@ public class MusicSelector extends MainState {
 						preview.stop();
 						main.changeState(MainController.STATE_DECIDE);
 						banners.disposeOld();
+						stagefiles.disposeOld();
+					} else {
+						main.getMessageRenderer().addMessage("Failed to loading BMS : Song not found, or Song has error", 1200, Color.RED, 1);
 					}
 				} else if (song.getIpfs() != null && main.getMusicDownloadProcessor() != null
 						&& main.getMusicDownloadProcessor().isAlive()) {
@@ -346,6 +348,7 @@ public class MusicSelector extends MainState {
 							preview.stop();
 							main.changeState(MainController.STATE_DECIDE);
 							banners.disposeOld();
+							stagefiles.disposeOld();
 						}
 					}
 				}
@@ -398,7 +401,7 @@ public class MusicSelector extends MainState {
 			Logger.getGlobal().info("段位の楽曲が揃っていません");
 			return;
 		}
-		
+
 		resource.clear();
 		final SongData[] songs = course.getSongDatas();
 		Path[] files = new Path[songs.length];
@@ -453,7 +456,9 @@ public class MusicSelector extends MainState {
 			resource.setBMSFile(files[0], mode);
 			main.changeState(MainController.STATE_DECIDE);
 			banners.disposeOld();
+			stagefiles.disposeOld();
 		} else {
+			main.getMessageRenderer().addMessage("Failed to loading Course : Some of songs not found", 1200, Color.RED, 1);
 			Logger.getGlobal().info("段位の楽曲が揃っていません");
 		}
 	}
@@ -470,6 +475,7 @@ public class MusicSelector extends MainState {
 		super.dispose();
 		bar.dispose();
 		banners.dispose();
+		stagefiles.dispose();
 		if (search != null) {
 			search.dispose();
 			search = null;
@@ -562,8 +568,14 @@ public class MusicSelector extends MainState {
 		case BUTTON_HSFIX:
 			execute(arg >= 0 ? MusicSelectCommand.NEXT_HSFIX : MusicSelectCommand.PREV_HSFIX);
 			break;
+		case BUTTON_TARGET:
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_TARGET : MusicSelectCommand.PREV_TARGET);
+			break;
 		case BUTTON_BGA:
 			execute(arg >= 0 ? MusicSelectCommand.NEXT_BGA_SHOW : MusicSelectCommand.PREV_BGA_SHOW);
+			break;
+		case BUTTON_GAUGEAUTOSHIFT:
+			execute(arg >= 0 ? MusicSelectCommand.NEXT_GAUGEAUTOSHIFT : MusicSelectCommand.PREV_GAUGEAUTOSHIFT);
 			break;
 		}
 	}
@@ -579,13 +591,19 @@ public class MusicSelector extends MainState {
 	public PixmapResourcePool getBannerResource() {
 		return banners;
 	}
+	public PixmapResourcePool getStagefileResource() {
+		return stagefiles;
+	}
 
 	public void selectedBarMoved() {
 		execute(MusicSelectCommand.RESET_REPLAY);
 		// banner
+		// stagefile
 		final Bar current = bar.getSelected();
 		main.getPlayerResource().getBMSResource().setBanner(
 				current instanceof SongBar ? ((SongBar) current).getBanner() : null);
+		main.getPlayerResource().getBMSResource().setStagefile(
+				current instanceof SongBar ? ((SongBar) current).getStagefile() : null);
 
 		main.setTimerOn(TIMER_SONGBAR_CHANGE);
 		if(preview.getSongData() != null && (!(bar.getSelected() instanceof SongBar) ||

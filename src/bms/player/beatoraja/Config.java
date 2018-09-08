@@ -118,9 +118,16 @@ public class Config implements Validatable {
 	 * 選曲バー移動速度の2つ目以降
 	 */
 	private int scrolldurationhigh = 50;
+	/**
+	 * プレビュー音源をループするかどうか
+	 */
+	private boolean loopPreview = true;
+	/**
+	 * スキン画像のキャッシュイメージを作成するかどうか
+	 */
     private boolean cacheSkinImage = false;
     /**
-     * 
+     * songinfoデータベースを使用するかどうか
      */
     private boolean useSongInfo = true;
 
@@ -129,27 +136,29 @@ public class Config implements Validatable {
 	 */
 	private String judgeType = JudgeAlgorithm.Combo.name();
 	/**
-	 * 
+	 * HIDDENノートを表示するかどうか
 	 */
 	private boolean showhiddennote = false;
-
+	/**
+	 * 通過ノートを表示するかどうか
+	 */
 	private boolean showpastnote = false;
 
 	private String songpath = SONGPATH_DEFAULT;
 	public static final String SONGPATH_DEFAULT = "songdata.db";
-	
+
 	private String songinfopath = SONGINFOPATH_DEFAULT;
-	public static final String SONGINFOPATH_DEFAULT = "songinfo.db";	
-	
+	public static final String SONGINFOPATH_DEFAULT = "songinfo.db";
+
 	private String tablepath = TABLEPATH_DEFAULT;
-	public static final String TABLEPATH_DEFAULT = "table";	
-	
+	public static final String TABLEPATH_DEFAULT = "table";
+
 	private String playerpath = PLAYERPATH_DEFAULT;
-	public static final String PLAYERPATH_DEFAULT = "player";	
-	
+	public static final String PLAYERPATH_DEFAULT = "player";
+
 	private String skinpath = SKINPATH_DEFAULT;
-	public static final String SKINPATH_DEFAULT = "skin";	
-	
+	public static final String SKINPATH_DEFAULT = "skin";
+
 	private String bgmpath = "";
 
 	private String soundpath = "";
@@ -184,6 +193,7 @@ public class Config implements Validatable {
 	private int autosavereplay[] = {0,0,0,0};
 
 	private int skinPixmapGen = 4;
+	private int stagefilePixmapGen = 3;
 	private int bannerPixmapGen = 2;
 	private int songResourceGen = 1;
 
@@ -356,6 +366,14 @@ public class Config implements Validatable {
 		this.scrolldurationhigh = scrolldurationhigh;
 	}
 
+	public boolean isLoopPreview() {
+		return loopPreview;
+	}
+
+	public void setLoopPreview(boolean loopPreview) {
+		this.loopPreview = loopPreview;
+	}
+
 	public float getKeyvolume() {
 		if(keyvolume < 0 || keyvolume > 1) {
 			keyvolume = 1;
@@ -488,6 +506,14 @@ public class Config implements Validatable {
 		this.skinPixmapGen = skinPixmapGen;
 	}
 
+	public int getStagefilePixmapGen() {
+		return stagefilePixmapGen;
+	}
+
+	public void setStagefilePixmapGen(int stagefilePixmapGen) {
+		this.stagefilePixmapGen = stagefilePixmapGen;
+	}
+
 	public int getBannerPixmapGen() {
 		return bannerPixmapGen;
 	}
@@ -601,7 +627,7 @@ public class Config implements Validatable {
 		if (ipfsurl == null) {
 			ipfsurl = "https://gateway.ipfs.io/";
 		}
-		
+
 		songpath = songpath != null ? songpath : SONGPATH_DEFAULT;
 		songinfopath = songinfopath != null ? songinfopath : SONGINFOPATH_DEFAULT;
 		tablepath = tablepath != null ? tablepath : TABLEPATH_DEFAULT;
