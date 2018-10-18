@@ -4,15 +4,19 @@ import bms.player.beatoraja.Config;
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.SkinConfig;
 import bms.player.beatoraja.skin.*;
+import bms.player.beatoraja.skin.property.*;
 import com.badlogic.gdx.utils.reflect.ClassReflection;
 import com.badlogic.gdx.utils.reflect.Field;
 import com.badlogic.gdx.utils.reflect.ReflectionException;
+import org.luaj.vm2.LuaFunction;
 import org.luaj.vm2.LuaTable;
 import org.luaj.vm2.LuaValue;
 
 import java.lang.reflect.Array;
 import java.nio.file.Path;
-import java.util.logging.Logger;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.Function;
 
 public class LuaSkinLoader extends JSONSkinLoader {
 
@@ -61,28 +65,61 @@ public class LuaSkinLoader extends JSONSkinLoader {
 		return skin;
 	}
 
+	private Map<Class, Function<LuaValue, Object>> serializerMap = new HashMap<Class, Function<LuaValue, Object>>() {
+		{
+			put(boolean.class, LuaValue::toboolean);
+			put(Boolean.class, LuaValue::toboolean);
+			put(int.class, LuaValue::toint);
+			put(Integer.class, LuaValue::toint);
+			put(float.class, LuaValue::tofloat);
+			put(Float.class, LuaValue::tofloat);
+			put(String.class, LuaValue::tojstring);
+			put(BooleanProperty.class, lv ->
+					serializeLuaScript(lv, lua::loadBooleanProperty, lua::loadBooleanProperty, BooleanPropertyFactory::getBooleanProperty));
+			put(IntegerProperty.class, lv ->
+					serializeLuaScript(lv, lua::loadIntegerProperty, lua::loadIntegerProperty, IntegerPropertyFactory::getIntegerProperty));
+			put(FloatProperty.class, lv ->
+					serializeLuaScript(lv, lua::loadFloatProperty, lua::loadFloatProperty, FloatPropertyFactory::getFloatProperty));
+			put(StringProperty.class, lv ->
+					serializeLuaScript(lv, lua::loadStringProperty, lua::loadStringProperty, StringPropertyFactory::getStringProperty));
+			put(TimerProperty.class, lv ->
+					serializeLuaScript(lv, lua::loadTimerProperty, lua::loadTimerProperty, TimerPropertyFactory::getTimerProperty));
+			put(SkinObject.FloatWriter.class, lv ->
+					serializeLuaScript(lv, lua::loadFloatWriter, lua::loadFloatWriter, FloatPropertyFactory::getFloatWriter));
+			put(SkinObject.Event.class, lv ->
+					serializeLuaScript(lv, lua::loadEvent, lua::loadEvent, null));
+		}
+	};
+
+	private static <T> T serializeLuaScript(LuaValue lv, Function<LuaFunction, T> asFunction, Function<String, T> asScript, Function<Integer, T> byId) {
+		if (lv.isfunction()) {
+			return asFunction.apply(lv.checkfunction());
+		} else if (lv.isnumber() && byId != null) {
+			return byId.apply(lv.toint());
+		} else if (lv.isstring()) {
+			return asScript.apply(lv.tojstring());
+		} else {
+			return null;
+		}
+	}
+
+	@SuppressWarnings("unchecked")
 	<T> T fromLuaValue(Class<T> cls, LuaValue lv) {
-		if (cls.isArray()) {
+		if (serializerMap.containsKey(cls)) {
+			return (T) serializerMap.get(cls).apply(lv);
+		} else if (cls.isArray()) {
 			Class componentClass = cls.getComponentType();
 			if (lv.istable()) {
-				LuaTable table = (LuaTable)lv;
+				LuaTable table = (LuaTable) lv;
 				LuaValue[] keys = table.keys();
 				Object array = Array.newInstance(componentClass, keys.length);
-				for (int i=0; i<keys.length; i++) {
+				for (int i = 0; i < keys.length; i++) {
 					Array.set(array, i, fromLuaValue(componentClass, table.get(keys[i])));
 				}
-				return (T)array;
+				return (T) array;
 			} else {
-				return (T)Array.newInstance(componentClass, 0);
+				return (T) Array.newInstance(componentClass, 0);
 			}
-		} else if (cls == boolean.class || cls == Boolean.class) {
-			return (T)(Boolean)lv.toboolean();
-		} else if (cls == int.class || cls == Integer.class) {
-			return (T)(Integer)lv.toint();
-		} else if (cls == float.class || cls == Float.class) {
-			return (T)(Float)lv.tofloat();
-		} else if (cls == String.class) {
-			return (T)lv.tojstring();
 		} else {
 			try {
 				T instance = (T) ClassReflection.newInstance(cls);
