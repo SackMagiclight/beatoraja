@@ -2,6 +2,8 @@ package bms.player.beatoraja.skin;
 
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
+import bms.player.beatoraja.skin.property.FloatProperty;
+import bms.player.beatoraja.skin.property.FloatPropertyFactory;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Rectangle;
@@ -22,10 +24,6 @@ public class SkinSlider extends SkinObject {
 	 */
 	private int range = 100;
 	/**
-	 * slider値参照ID(将来廃止予定)
-	 */
-	private int type;
-	/**
 	 * slider値参照先
 	 */	
 	private final FloatProperty ref;
@@ -39,9 +37,8 @@ public class SkinSlider extends SkinObject {
 		source = new SkinSourceImage(image, timer ,cycle);
 		this.direction = angle;
 		this.range = range;
-		ref = SkinPropertyMapper.getFloatProperty(type);
-		writer = SkinPropertyMapper.getFloatWriter(type);
-		this.type = type;
+		ref = FloatPropertyFactory.getFloatProperty(type);
+		writer = FloatPropertyFactory.getFloatWriter(type);
 	}
 
 	public SkinSlider(TextureRegion[] image, int timer, int cycle, int angle, int range, FloatProperty ref) {
@@ -54,7 +51,6 @@ public class SkinSlider extends SkinObject {
 		this.range = range;
 		this.ref = ref;
 		this.writer = writer;
-		this.type = 0;
 	}
 
 	public SkinSlider(TextureRegion[] image, int timer, int cycle, int angle, int range, int type, int min, int max) {
@@ -63,7 +59,6 @@ public class SkinSlider extends SkinObject {
 		this.range = range;
 		ref = new RateProperty(type, min, max);
 		writer = null;
-		this.type = type;
 	}
 
 	public void draw(SkinObjectRenderer sprite, long time, MainState state) {
@@ -73,7 +68,7 @@ public class SkinSlider extends SkinObject {
 		Rectangle r = this.getDestination(time,state);
 		if (r != null) {
 			TextureRegion image = source.getImage(time, state);
-			float value = ref != null ? ref.get(state) : (type != -1 ? state.getSliderValue(type) : 0);
+			float value = ref != null ? ref.get(state) : 0;
 			draw(sprite, image, r.x
 					+ (direction == 1 ? value * range : (direction == 3 ? -value * range : 0)), r.y
 					+ (direction == 0 ? value * range : (direction == 2 ? -value * range : 0)),
@@ -90,8 +85,6 @@ public class SkinSlider extends SkinObject {
 					if (r.x <= x && r.x + r.width >= x && r.y <= y && r.y + range >= y) {
 						if(writer != null) {
 							writer.set(state, (y - r.y) / range);
-						} else {
-							state.setSliderValue(type, (y - r.y) / range);
 						}
 						return true;
 					}
@@ -100,8 +93,6 @@ public class SkinSlider extends SkinObject {
 					if (r.x <= x && r.x + range >= x && r.y <= y && r.y + r.height >= y) {
 						if(writer != null) {
 							writer.set(state, (x - r.x) / range);
-						} else {
-							state.setSliderValue(type, (x - r.x) / range);							
 						}
 						return true;
 					}
@@ -110,8 +101,6 @@ public class SkinSlider extends SkinObject {
 					if (r.x <= x && r.x + r.width >= x && r.y - range <= y && r.y >= y) {
 						if(writer != null) {
 							writer.set(state, (r.y - y) / range);
-						} else {
-							state.setSliderValue(type, (r.y - y) / range);							
 						}
 						return true;
 					}
@@ -120,8 +109,6 @@ public class SkinSlider extends SkinObject {
 					if (r.x <= x && r.x + range >= x && r.y <= y && r.y + r.height >= y) {
 						if(writer != null) {
 							writer.set(state, (r.x + range - x) / range);
-						} else {
-							state.setSliderValue(type, (r.x + range - x) / range);							
 						}
 						return true;
 					}
@@ -149,10 +136,6 @@ public class SkinSlider extends SkinObject {
 	
 	public int getRange() {
 		return range;
-	}
-	
-	public int getType() {
-		return type;
 	}
 	
 	public int getSliderAngle() {

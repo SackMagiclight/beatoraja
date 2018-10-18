@@ -3,6 +3,8 @@ package bms.player.beatoraja.skin.lr2;
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import java.io.*;
+import java.nio.file.Path;
+import java.util.Arrays;
 
 import com.badlogic.gdx.graphics.Texture;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -13,6 +15,7 @@ import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.play.*;
 import bms.player.beatoraja.skin.*;
+import bms.player.beatoraja.skin.SkinObject.SkinObjectDestination;
 
 /**
  * LR2プレイスキンローダー
@@ -43,6 +46,7 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 	private SkinSource[] mine = new SkinSource[8];
 	private Rectangle[] laner = new Rectangle[8];
 	private float[] scale = new float[8];
+	private int[] dstnote2 = new int[8];
 	private SkinImage line;
 	private SkinImage[] lines = new SkinImage[8];
 	private String[][] linevalues = new String[2][];
@@ -62,6 +66,8 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 	private SkinBPMGraph bpmgraphobj;
 	private SkinTimingVisualizer timingobj;
 	private SkinHidden hidden;
+	
+	SkinSlider laneCover;
 
 	public LR2PlaySkinLoader(final SkinType type, final Resolution src, final Config c) {
 		super(src, c);
@@ -317,7 +323,7 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 			@Override
 			//PMSの見逃しPOOR時のノートが落ちる演出の消失点のy座標
 			public void execute(String[] str) {
-				lanerender.setDstNote2((int) (dsth - (Integer.parseInt(str[1]) * dsth / srch + scale[0])));
+				Arrays.fill(dstnote2, (int) (dsth - (Integer.parseInt(str[1]) * dsth / srch + scale[0])));
 			}
 		});
 
@@ -856,7 +862,7 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 				values[19], values[20], readOffset(str, 21, offset));
 	}
 
-	public PlaySkin loadSkin(File f, MainState player, SkinHeader header, IntIntMap option,
+	public PlaySkin loadSkin(Path f, MainState player, SkinHeader header, IntIntMap option,
 			ObjectMap property) throws IOException {
 		mode = type.getMode();
 		note = new SkinSource[mode.key];
@@ -873,6 +879,8 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 		mine = new SkinSource[mode.key];
 		laner = new Rectangle[mode.key];
 		scale = new float[mode.key];
+		dstnote2 = new int[mode.key];
+		Arrays.fill(dstnote2,  Integer.MIN_VALUE);
 
 		playerr = new Rectangle[mode.player];
 		for(int i = 0;i < playerr.length;i++) {
@@ -882,13 +890,14 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 		this.loadSkin(new PlaySkin(src, dst), f, player, header, option, property);
 
 		//白数字が0の時のレーンカバーのy座標の分だけレーンの高さを減らす
-		float laneCoverPosition = skin.getLaneCoverPosition();
+		//TODO 固有実装の汎用化
+		float laneCoverPosition = getLaneCoverPosition();
 		if(laneCoverPosition > 0) {
 			for(int i = 0; i < laner.length; i++) {
 				laner[i].height = laner[i].height - (dsth - laneCoverPosition);
 			}
 		}
-		lanerender.setLaneRegion(laner, scale, skin);
+		lanerender.setLaneRegion(laner, scale, dstnote2, skin);
 
 		SkinImage[] skinline = new SkinImage[lines[0] != null ? (lines[1] != null ? 2 : 1) : 0];
 		for(int i = 0;i < skinline.length;i++) {
@@ -943,5 +952,16 @@ public class LR2PlaySkinLoader extends LR2SkinCSVLoader<PlaySkin> {
 				values[5] * dstw / srcw, values[6] * dsth / srch * h, values[7], 255, r, g,
 				b, values[12], values[13], values[14], values[15], values[16],
 				values[17], values[18], values[19], values[20], readOffset(linevalues[index % 2], 21, new int[]{OFFSET_LIFT}));
+	}
+	
+	/*
+	 * 白数字が0の時のレーンカバーのy座標
+	 */
+	public float getLaneCoverPosition() {
+		if(skin.laneCover != null) {
+			SkinObjectDestination[] dst = skin.laneCover.getAllDestination();
+			return dst[dst.length - 1].region.y;
+		}
+		return -1;
 	}
 }

@@ -28,7 +28,7 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
  * @author exch
  */
 public class LaneRenderer {
-
+	
 	private float basehispeed;
 
 	private float hispeedmargin = 0.25f;
@@ -54,7 +54,7 @@ public class LaneRenderer {
 	private double mainbpm;
 	private double minbpm;
 	private double maxbpm;
-
+	
 	private TextureRegion[] noteimage;
 	private TextureRegion[][] longnote;
 	private TextureRegion[] mnoteimage;
@@ -256,7 +256,7 @@ public class LaneRenderer {
 		return playconfig;
 	}
 
-	public void drawLane(SkinObjectRenderer sprite, long time, SkinLane[] lanes, int dstNote2) {
+	public void drawLane(SkinObjectRenderer sprite, long time, SkinLane[] lanes) {
 		for (int i = 0; i < lanes.length; i++) {
 			if (i >= noteimage.length) {
 				break;
@@ -294,12 +294,15 @@ public class LaneRenderer {
 		final Rectangle[] playerr = skin.getLaneGroupRegion();
 		double bpm = model.getBpm();
 		double nbpm = bpm;
+		double nscroll = 1.0;
 		for (int i = (pos > 5 ? pos - 5 : 0); i < timelines.length && timelines[i].getMicroTime() <= microtime; i++) {
 			nbpm = timelines[i].getBPM();
+			nscroll = timelines[i].getScroll();
 		}
 		nowbpm = nbpm;
-		final double region = (240000 / nbpm / hispeed);
+		final double region = nscroll > 0 ? (240000 / nbpm / hispeed) / nscroll : 0;
 		// double sect = (bpm / 60) * 4 * 1000;
+		// TODO hu,hlをレーン毎に変更
 		final double hu = laneregion[0].y + laneregion[0].height;
 		final double hl = playconfig.isEnablelift() ? laneregion[0].y + laneregion[0].height * playconfig.getLift() : laneregion[0].y;
 		final double rxhs = (hu - hl) * hispeed;
@@ -333,7 +336,7 @@ public class LaneRenderer {
 				for (int i = pos; i < timelines.length; i++) {
 					final TimeLine tl = timelines[i];
 					if (tl.getMicroTime() >= microtime) {
-						double rate = (tl.getSection() - (i > 0 ? timelines[i - 1].getSection() : 0)) * rxhs * 1000
+						double rate = (tl.getSection() - (i > 0 ? timelines[i - 1].getSection() : 0)) * (i > 0 ? timelines[i - 1].getScroll() : 1.0) * rxhs * 1000
 								/ (tl.getMicroTime() - (i > 0
 										? timelines[i - 1].getMicroTime() + timelines[i - 1].getMicroStop() : 0));
 						for (int j = color.length - 1; j >= 0; j--) {
@@ -348,6 +351,7 @@ public class LaneRenderer {
 			}
 		}
 
+		// draw section line
 		final double orgy = y;
 		for (int i = pos; i < timelines.length && y <= hu; i++) {
 			final TimeLine tl = timelines[i];
@@ -355,9 +359,9 @@ public class LaneRenderer {
 				if (i > 0) {
 					final TimeLine prevtl = timelines[i - 1];
 					if (prevtl.getMicroTime() + prevtl.getMicroStop() > microtime) {
-						y += (tl.getSection() - prevtl.getSection()) * rxhs;
+						y += (tl.getSection() - prevtl.getSection()) * prevtl.getScroll() * rxhs;
 					} else {
-						y += (tl.getSection() - prevtl.getSection()) * (tl.getMicroTime() - microtime)
+						y += (tl.getSection() - prevtl.getSection()) * prevtl.getScroll() * (tl.getMicroTime() - microtime)
 								/ (tl.getMicroTime() - prevtl.getMicroTime() - prevtl.getMicroStop()) * rxhs;
 					}
 				} else {
@@ -436,9 +440,9 @@ public class LaneRenderer {
 				if (i > 0) {
 					final TimeLine prevtl = timelines[i - 1];
 					if (prevtl.getMicroTime() + prevtl.getMicroStop() > microtime) {
-						y += (tl.getSection() - prevtl.getSection()) * rxhs;
+						y += (tl.getSection() - prevtl.getSection()) * prevtl.getScroll() * rxhs;
 					} else {
-						y += (tl.getSection() - prevtl.getSection()) * (tl.getMicroTime() - microtime)
+						y += (tl.getSection() - prevtl.getSection()) * prevtl.getScroll() * (tl.getMicroTime() - microtime)
 								/ (tl.getMicroTime() - prevtl.getMicroTime() - prevtl.getMicroStop()) * rxhs;
 					}
 				} else {
@@ -470,7 +474,7 @@ public class LaneRenderer {
 					}
 					if (note instanceof NormalNote) {
 						// draw normal note
-						if (dstNote2 != Integer.MIN_VALUE) {
+						if (lanes[lane].dstnote2 != Integer.MIN_VALUE) {
 							if (tl.getMicroTime() >= microtime && (note.getState() == 0 || note.getState() >= 4)) {
 								final TextureRegion s = config.isMarkprocessednote() && note.getState() != 0
 								? pnoteimage[lane] : noteimage[lane];
@@ -498,9 +502,9 @@ public class LaneRenderer {
 								final TimeLine nowtl = timelines[j];
 								if (nowtl.getMicroTime() >= microtime) {
 									if (prevtl.getMicroTime() + prevtl.getMicroStop() > microtime) {
-										dy += (nowtl.getSection() - prevtl.getSection()) * rxhs;
+										dy += (nowtl.getSection() - prevtl.getSection()) * prevtl.getScroll() * rxhs;
 									} else {
-										dy += (nowtl.getSection() - prevtl.getSection())
+										dy += (nowtl.getSection() - prevtl.getSection()) * prevtl.getScroll()
 												* (nowtl.getMicroTime() - microtime)
 												/ (nowtl.getMicroTime() - prevtl.getMicroTime() - prevtl.getMicroStop())
 												* rxhs;
@@ -536,11 +540,12 @@ public class LaneRenderer {
 		// + (ltime * (hu - hl) / yy));
 		
 		//PMS見逃しPOOR描画
-		if (dstNote2 != Integer.MIN_VALUE) {
+		// TODO dstnote2をレーン毎に変更
+		if (lanes[0].dstnote2 != Integer.MIN_VALUE) {
 			//遅BADからノースピの速度で落下
 			final long badTime = Math.abs( main.getJudgeManager().getJudgeTable(false)[2][0] ) * 1000;
 			double stopTime;
-			double orgy2 = dstNote2;
+			double orgy2 = lanes[0].dstnote2;
 			if(orgy2 < -laneregion[0].height) orgy2 = -laneregion[0].height;
 			if(orgy2 > orgy) orgy2 = orgy;
 			final double rxhs2 = (hu - hl);

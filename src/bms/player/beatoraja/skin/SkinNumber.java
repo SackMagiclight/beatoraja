@@ -2,6 +2,8 @@ package bms.player.beatoraja.skin;
 
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
+import bms.player.beatoraja.skin.property.IntegerProperty;
+import bms.player.beatoraja.skin.property.IntegerPropertyFactory;
 
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
 import com.badlogic.gdx.math.Rectangle;
@@ -22,8 +24,6 @@ public class SkinNumber extends SkinObject {
 	 */
 	private SkinSource mimage;
 
-	private int id = -1;
-	
 	private IntegerProperty ref;
 	/**
 	 * 表示桁数
@@ -57,7 +57,7 @@ public class SkinNumber extends SkinObject {
 		this.mimage = mimage != null ? new SkinSourceImage(mimage, timer, cycle) : null;
 		this.setKeta(keta);
 		this.zeropadding = zeropadding;
-		setId(id);
+		ref = IntegerPropertyFactory.getIntegerProperty(id);
 	}
 
 	public SkinNumber(TextureRegion[][] image, TextureRegion[][] mimage, int timer, int cycle, int keta, int zeropadding, IntegerProperty ref) {
@@ -66,17 +66,6 @@ public class SkinNumber extends SkinObject {
 		this.setKeta(keta);
 		this.zeropadding = zeropadding;
 		this.ref = ref;
-	}
-
-	public int getId() {
-		return id;
-	}
-
-	public void setId(int id) {
-		if(ref == null) {
-			ref = SkinPropertyMapper.getIntegerProperty(id);
-			this.id = id;			
-		}
 	}
 
 	public int getKeta() {
@@ -96,8 +85,6 @@ public class SkinNumber extends SkinObject {
 		int value = Integer.MIN_VALUE;
 		if (ref != null) {
 			value = ref.get(state);
-		} else if (id != -1) {
-			value = state.getNumberValue(id);
 		}
 		if (value != Integer.MIN_VALUE && value != Integer.MAX_VALUE) {
 			draw(sprite, time, value, state);

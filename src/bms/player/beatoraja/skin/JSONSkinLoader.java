@@ -23,6 +23,7 @@ import bms.player.beatoraja.select.*;
 import bms.player.beatoraja.skin.SkinHeader.CustomOffset;
 import bms.player.beatoraja.skin.SkinObject.*;
 import bms.player.beatoraja.skin.lua.SkinLuaAccessor;
+import bms.player.beatoraja.skin.property.*;
 
 public class JSONSkinLoader extends SkinLoader{
 
@@ -201,7 +202,8 @@ public class JSONSkinLoader extends SkinLoader{
 								ext = customFile.path.substring(customFile.path.lastIndexOf("*") + 1, customFile.path.indexOf('|'));
 							}
 						}
-						File dir = new File(customFile.path.substring(0, customFile.path.lastIndexOf('/')));
+						final int slashindex = customFile.path.lastIndexOf('/');
+						File dir = slashindex != -1 ? new File(customFile.path.substring(0, slashindex)) : new File(customFile.path);
 						if (dir.exists() && dir.isDirectory()) {
 							List<File> l = new ArrayList<File>();
 							for (File subfile : dir.listFiles()) {
@@ -610,6 +612,8 @@ public class JSONSkinLoader extends SkinLoader{
 
 						Rectangle[] region = new Rectangle[sk.note.dst.length];
 						float[] scale = new float[region.length];
+						int[] dstnote2 = new int[region.length];
+						Arrays.fill(dstnote2,  Integer.MIN_VALUE);
 						float dx = (float)dstr.width / sk.w;
 						float dy = (float)dstr.height / sk.h;
 						for (int i = 0; i < region.length; i++) {
@@ -699,9 +703,11 @@ public class JSONSkinLoader extends SkinLoader{
 							((PlaySkin) skin).setTimeLine(time);
 						}
 
+						if(sk.note.dst2 != Integer.MIN_VALUE) {
+							Arrays.fill(dstnote2, (int) Math.round(sk.note.dst2 * dy));
+						}
 						SkinNote sn = new SkinNote(notes, lnss, mines);
-						sn.setLaneRegion(region, scale, skin);
-						sn.setDstNote2((int) Math.round(sk.note.dst2 * dy));
+						sn.setLaneRegion(region, scale, dstnote2, skin);
 						((PlaySkin) skin).setLaneRegion(region);
 						((PlaySkin) skin).setLaneGroupRegion(gregion);
 						((PlaySkin) skin).setNoteExpansionRate(sk.note.expansionrate);

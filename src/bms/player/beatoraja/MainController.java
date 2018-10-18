@@ -6,7 +6,6 @@ import java.io.*;
 import java.nio.file.*;
 import java.text.SimpleDateFormat;
 import java.util.*;
-import java.util.function.Consumer;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
@@ -43,6 +42,9 @@ import bms.player.beatoraja.select.MusicSelector;
 import bms.player.beatoraja.select.bar.TableBar;
 import bms.player.beatoraja.skin.SkinLoader;
 import bms.player.beatoraja.skin.SkinObject.SkinOffset;
+import bms.player.beatoraja.skin.property.BooleanPropertyFactory;
+import bms.player.beatoraja.skin.property.IntegerPropertyFactory;
+import bms.player.beatoraja.skin.property.StringPropertyFactory;
 import bms.player.beatoraja.skin.SkinProperty;
 import bms.player.beatoraja.song.*;
 import bms.tool.mdprocessor.MusicDownloadProcessor;
@@ -56,12 +58,12 @@ import twitter4j.conf.ConfigurationBuilder;
  */
 public class MainController extends ApplicationAdapter {
 
-	public static final String VERSION = "beatoraja 0.6.1";
+	public static final String VERSION = "beatoraja 0.6.3";
 
-	private static final boolean debug = true;
+	private static final boolean debug = false;
 
 	/**
-	 *
+	 * 起動時間
 	 */
 	private final long boottime = System.currentTimeMillis();
 	private final Calendar cl = Calendar.getInstance();
@@ -84,6 +86,7 @@ public class MainController extends ApplicationAdapter {
 	private MessageRenderer messageRenderer;
 
 	private MainState current;
+	// TODO currentStateの多重定義は好ましくないため、削除予定
 	private static MainState currentState;
 	/**
 	 * 状態の開始時間
@@ -118,8 +121,6 @@ public class MainController extends ApplicationAdapter {
 	private PlayDataAccessor playdata;
 
 	static final Path configpath = Paths.get("config.json");
-	private static final Path songdbpath = Paths.get("songdata.db");
-	private static final Path infodbpath = Paths.get("songinfo.db");
 
 	private SystemSoundManager sound;
 
@@ -147,7 +148,7 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		if(player == null) {
-			player = PlayerConfig.readPlayerConfig(config.getPlayername());
+			player = PlayerConfig.readPlayerConfig(config.getPlayerpath(), config.getPlayername());
 		}
 		this.player = player;
 
@@ -165,9 +166,9 @@ public class MainController extends ApplicationAdapter {
 		}
 		try {
 			Class.forName("org.sqlite.JDBC");
-			songdb = new SQLiteSongDatabaseAccessor(songdbpath.toString(), config.getBmsroot());
+			songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(), config.getBmsroot());
 			if(config.isUseSongInfo()) {
-				infodb = new SongInformationAccessor(infodbpath.toString());
+				infodb = new SongInformationAccessor(config.getSonginfopath());
 			}
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
@@ -181,7 +182,7 @@ public class MainController extends ApplicationAdapter {
 				ir = null;
 			} else {
 				IRResponse response = ir.login(player.getUserid(), player.getPassword());
-				if(!response.isSuccessed()) {
+				if(!response.isSucceeded()) {
 					Logger.getGlobal().warning("IRへのログイン失敗 : " + response.getMessage());
 					ir = null;
 				}
@@ -587,7 +588,7 @@ public class MainController extends ApplicationAdapter {
 
 	public void saveConfig(){
 		Config.write(config);
-		PlayerConfig.write(player);
+		PlayerConfig.write(config.getPlayerpath(), player);
 		Logger.getGlobal().info("設定情報を保存");
 	}
 
@@ -613,6 +614,10 @@ public class MainController extends ApplicationAdapter {
 
 	public MusicDownloadProcessor getMusicDownloadProcessor(){
 		return download;
+	}
+	
+	public MessageRenderer getMessageRenderer() {
+		return messageRenderer;
 	}
 
 	public long getPlayTime() {
@@ -692,8 +697,9 @@ public class MainController extends ApplicationAdapter {
 		String[] clearTypeName = { "NO PLAY", "FAILED", "ASSIST EASY CLEAR", "LIGHT ASSIST EASY CLEAR", "EASY CLEAR",
 				"CLEAR", "HARD CLEAR", "EXHARD CLEAR", "FULL COMBO", "PERFECT", "MAX" };
 
-		if(currentState.getNumberValue(NUMBER_CLEAR) >= 0 && currentState.getNumberValue(NUMBER_CLEAR) < clearTypeName.length) {
-			return clearTypeName[currentState.getNumberValue(NUMBER_CLEAR)];
+		int clear = IntegerPropertyFactory.getIntegerProperty(NUMBER_CLEAR).get(currentState);
+		if(clear >= 0 && clear < clearTypeName.length) {
+			return clearTypeName[clear];
 		}
 
 		return "";
@@ -701,14 +707,14 @@ public class MainController extends ApplicationAdapter {
 
 	public static String getRankTypeName() {
 		String rankTypeName = "";
-		if(currentState.getBooleanValue(OPTION_RESULT_AAA_1P)) rankTypeName += "AAA";
-		else if(currentState.getBooleanValue(OPTION_RESULT_AA_1P)) rankTypeName += "AA";
-		else if(currentState.getBooleanValue(OPTION_RESULT_A_1P)) rankTypeName += "A";
-		else if(currentState.getBooleanValue(OPTION_RESULT_B_1P)) rankTypeName += "B";
-		else if(currentState.getBooleanValue(OPTION_RESULT_C_1P)) rankTypeName += "C";
-		else if(currentState.getBooleanValue(OPTION_RESULT_D_1P)) rankTypeName += "D";
-		else if(currentState.getBooleanValue(OPTION_RESULT_E_1P)) rankTypeName += "E";
-		else if(currentState.getBooleanValue(OPTION_RESULT_F_1P)) rankTypeName += "F";
+		if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_AAA_1P).get(currentState)) rankTypeName += "AAA";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_AA_1P).get(currentState)) rankTypeName += "AA";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_A_1P).get(currentState)) rankTypeName += "A";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_B_1P).get(currentState)) rankTypeName += "B";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_C_1P).get(currentState)) rankTypeName += "C";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_D_1P).get(currentState)) rankTypeName += "D";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_E_1P).get(currentState)) rankTypeName += "E";
+		else if(BooleanPropertyFactory.getBooleanProperty(OPTION_RESULT_F_1P).get(currentState)) rankTypeName += "F";
 		return rankTypeName;
 	}
 
@@ -745,23 +751,29 @@ public class MainController extends ApplicationAdapter {
 			} else if(currentState instanceof MusicDecide) {
 				stateName = "_Decide";
 			} if(currentState instanceof BMSPlayer) {
-				if(currentState.getTextValue(STRING_TABLE_LEVEL).length() > 0){
-					stateName = "_Play_" + currentState.getTextValue(STRING_TABLE_LEVEL);
+				final String tablelevel = StringPropertyFactory.getStringProperty(STRING_TABLE_LEVEL).get(currentState);
+				if(tablelevel.length() > 0){
+					stateName = "_Play_" + tablelevel;
 				}else{
-					stateName = "_Play_LEVEL" + currentState.getNumberValue(NUMBER_PLAYLEVEL);
+					stateName = "_Play_LEVEL" + IntegerPropertyFactory.getIntegerProperty(NUMBER_PLAYLEVEL).get(currentState);
 				}
-				if(currentState.getTextValue(STRING_FULLTITLE).length() > 0) stateName += " " + currentState.getTextValue(STRING_FULLTITLE);
+				final String fulltitle = StringPropertyFactory.getStringProperty(STRING_FULLTITLE).get(currentState);
+				if(fulltitle.length() > 0) {
+					stateName += " " + fulltitle;
+				}
 			} else if(currentState instanceof MusicResult || currentState instanceof CourseResult) {
 				if(currentState instanceof MusicResult){
-					if(currentState.getTextValue(STRING_TABLE_LEVEL).length() > 0){
-						stateName += "_" + currentState.getTextValue(STRING_TABLE_LEVEL) + " ";
+					final String tablelevel = StringPropertyFactory.getStringProperty(STRING_TABLE_LEVEL).get(currentState);
+					if(tablelevel.length() > 0){
+						stateName += "_" + tablelevel + " ";
 					}else{
-						stateName += "_LEVEL" + currentState.getNumberValue(NUMBER_PLAYLEVEL) + " ";
+						stateName += "_LEVEL" + IntegerPropertyFactory.getIntegerProperty(NUMBER_PLAYLEVEL).get(currentState) + " ";
 					}
 				}else{
 					stateName += "_";
 				}
-				if(currentState.getTextValue(STRING_FULLTITLE).length() > 0) stateName += currentState.getTextValue(STRING_FULLTITLE);
+				final String fulltitle = StringPropertyFactory.getStringProperty(STRING_FULLTITLE).get(currentState);
+				if(fulltitle.length() > 0) stateName += fulltitle;
 				stateName += " " + getClearTypeName();
 				stateName += " " + getRankTypeName();
 			} else if(currentState instanceof KeyConfiguration) {
@@ -826,28 +838,31 @@ public class MainController extends ApplicationAdapter {
 			} else if(currentState instanceof MusicDecide) {
 				// empty
 			} if(currentState instanceof BMSPlayer) {
-				if(currentState.getTextValue(STRING_TABLE_NAME).length() > 0){
-					builder.append(currentState.getTextValue(STRING_TABLE_LEVEL));
+				final String tablename = StringPropertyFactory.getStringProperty(STRING_TABLE_NAME).get(currentState);
+				final String tablelevel = StringPropertyFactory.getStringProperty(STRING_TABLE_LEVEL).get(currentState);
+
+				if(tablename.length() > 0){
+					builder.append(tablelevel);
 				}else{
-					builder.append("LEVEL");
-					builder.append(currentState.getNumberValue(NUMBER_PLAYLEVEL));
+					builder.append("LEVEL").append(IntegerPropertyFactory.getIntegerProperty(NUMBER_PLAYLEVEL).get(currentState));
 				}
-				if(currentState.getTextValue(STRING_FULLTITLE).length() > 0) {
-					builder.append(" ");
-					builder.append(currentState.getTextValue(STRING_FULLTITLE));
+				final String fulltitle = StringPropertyFactory.getStringProperty(STRING_FULLTITLE).get(currentState);
+				if(fulltitle.length() > 0) {
+					builder.append(" ").append(fulltitle);
 				}
 			} else if(currentState instanceof MusicResult || currentState instanceof CourseResult) {
 				if(currentState instanceof MusicResult) {
-					if(currentState.getTextValue(STRING_TABLE_NAME).length() > 0){
-						builder.append(currentState.getTextValue(STRING_TABLE_LEVEL));
+					final String tablename = StringPropertyFactory.getStringProperty(STRING_TABLE_NAME).get(currentState);
+					final String tablelevel = StringPropertyFactory.getStringProperty(STRING_TABLE_LEVEL).get(currentState);
+					if(tablename.length() > 0){
+						builder.append(tablelevel);
 					}else{
-						builder.append("LEVEL");
-						builder.append(currentState.getNumberValue(NUMBER_PLAYLEVEL));
+						builder.append("LEVEL").append(IntegerPropertyFactory.getIntegerProperty(NUMBER_PLAYLEVEL).get(currentState));
 					}
 				}
-				if(currentState.getTextValue(STRING_FULLTITLE).length() > 0) {
-					builder.append(" ");
-					builder.append(currentState.getTextValue(STRING_FULLTITLE));
+				final String fulltitle = StringPropertyFactory.getStringProperty(STRING_FULLTITLE).get(currentState);
+				if(fulltitle.length() > 0) {
+					builder.append(" ").append(fulltitle);
 				}
 				builder.append(" ");
 				builder.append(getClearTypeName());
@@ -1016,8 +1031,12 @@ public class MainController extends ApplicationAdapter {
 		private Path currentSoundPath;
 
 		public SystemSoundManager(Config config) {
-			scan(Paths.get(config.getBgmpath()), bgms, "select.");
-			scan(Paths.get(config.getSoundpath()), sounds, "clear.");
+			if(config.getBgmpath() != null && config.getBgmpath().length() > 0) {
+				scan(Paths.get(config.getBgmpath()), bgms, "select.");				
+			}
+			if(config.getSoundpath() != null && config.getSoundpath().length() > 0) {
+				scan(Paths.get(config.getSoundpath()), sounds, "clear.");				
+			}
 			Logger.getGlobal().info("検出されたBGM Set : " + bgms.size + " Sound Set : " + sounds.size);
 		}
 
@@ -1042,11 +1061,8 @@ public class MainController extends ApplicationAdapter {
 		private void scan(Path p, Array<Path> paths, String name) {
 			if (Files.isDirectory(p)) {
 				try (Stream<Path> sub = Files.list(p)) {
-					sub.forEach(new Consumer<Path>() {
-						@Override
-						public void accept(Path t) {
-							scan(t, paths, name);
-						}
+					sub.forEach((t) -> {
+						scan(t, paths, name);
 					});
 				} catch (IOException e) {
 				}

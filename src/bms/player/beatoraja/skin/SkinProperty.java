@@ -378,6 +378,8 @@ public class SkinProperty {
 	public static final int NUMBER_PLAYTIME_SECOND = 162;
 	public static final int NUMBER_TIMELEFT_MINUTE = 163;
 	public static final int NUMBER_TIMELEFT_SECOND = 164;
+	public static final int NUMBER_SONGLENGTH_MINUTE = 1163;
+	public static final int NUMBER_SONGLENGTH_SECOND = 1164;
 	public static final int NUMBER_LOADING_PROGRESS = 165;
 	public static final int NUMBER_HIGHSCORE2 = 170;
 	public static final int NUMBER_SCORE3 = 171;
@@ -437,7 +439,7 @@ public class SkinProperty {
 	public static final int NUMBER_DENSITY_ENDPEAK = 364;
 	public static final int NUMBER_DENSITY_ENDPEAK_AFTERDOT = 365;
 
-	public static final int NUMBER_SONGGAUGE_TOTAL = 370;
+	public static final int NUMBER_SONGGAUGE_TOTAL = 368;
 
 	public static final int VALUE_JUDGE_1P_DURATION = 525;
 	public static final int VALUE_JUDGE_2P_DURATION = 526;
@@ -788,6 +790,8 @@ public class SkinProperty {
 	public static final int BUTTON_DPOPTION = 54;
 	public static final int BUTTON_HSFIX = 55;
 	public static final int BUTTON_BGA = 72;
+	public static final int BUTTON_TARGET = 77;
+	public static final int BUTTON_GAUGEAUTOSHIFT = 78;
 	public static final int BUTTON_FAVORITTE = 90;
 	public static final int BUTTON_SKINSELECT_7KEY = 170;
 	public static final int BUTTON_SKINSELECT_5KEY = 171;

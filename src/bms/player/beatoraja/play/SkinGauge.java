@@ -1,5 +1,6 @@
 package bms.player.beatoraja.play;
 
+import bms.model.Mode;
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.PlayerResource;
 import bms.player.beatoraja.play.GaugeProperty.GaugeElementProperty;
@@ -22,19 +23,31 @@ import com.badlogic.gdx.graphics.Color;
  */
 public class SkinGauge extends SkinObject {
 
-	public static final int ANIMATION_RANDOM = 0;
-	public static final int ANIMATION_INCLEASE = 1;
-	public static final int ANIMATION_DECLEASE = 2;
-	public static final int ANIMATION_FLICKERING = 3; //PMSゲージ明滅用
-
 	/**
 	 * イメージ
 	 */
 	private SkinSource image;
 	/**
-	 * アニメーションの種類(未実装)
+	 * アニメーションの種類
 	 */
-	private int animationType = 0;
+	private int animationType = ANIMATION_RANDOM;
+	/**
+	 * アニメーションの種類:ランダム
+	 */	
+	public static final int ANIMATION_RANDOM = 0;
+	/**
+	 * アニメーションの種類:増加
+	 */	
+	public static final int ANIMATION_INCLEASE = 1;
+	/**
+	 * アニメーションの種類:減少
+	 */	
+	public static final int ANIMATION_DECLEASE = 2;
+	/**
+	 * アニメーションの種類:点滅
+	 */	
+	public static final int ANIMATION_FLICKERING = 3;
+	
 	/**
 	 * アニメーションする範囲
 	 */
@@ -64,6 +77,8 @@ public class SkinGauge extends SkinObject {
 	 * 7to9時にボーダーが丁度割り切れるゲージ粒数になっているかがチェック済みかどうか
 	 */
 	private boolean isCheckedSevenToNine = false;
+
+	private final Color flickerColor = new Color();
 
 	public SkinGauge(TextureRegion[][] image, int timer, int cycle, int parts, int type, int range, int duration) {
 		this.image = new SkinSourceImage(image, timer, cycle);
@@ -104,20 +119,24 @@ public class SkinGauge extends SkinObject {
 			atime = time + duration;
 		}
 
-		if(!isCheckedSevenToNine && BMSPlayerRule.isSevenToNine()) {
-			//7to9 ボーダーが丁度割り切れるゲージ粒数に変更
-			int setParts = parts;
-			for(int type = 0; type < gauge.getGaugeTypeLength(); type++) {
-				final GaugeElementProperty element = gauge.getGauge(type).getProperty();
-				for(int i = parts; i <= element.max; i++) {
-					if(element.border % (element.max / i) == 0) {
-						setParts = Math.max(setParts, i);
-						break;
+		// TODO 9key固有実装の汎用化
+		if(!isCheckedSevenToNine) {
+			if(state.main.getPlayerResource().getOriginalMode() == Mode.BEAT_7K 
+					&& state.main.getPlayerResource().getBMSModel().getMode() == Mode.POPN_9K) {
+				//7to9 ボーダーが丁度割り切れるゲージ粒数に変更
+				int setParts = parts;
+				for(int type = 0; type < gauge.getGaugeTypeLength(); type++) {
+					final GaugeElementProperty element = gauge.getGauge(type).getProperty();
+					for(int i = parts; i <= element.max; i++) {
+						if(element.border % (element.max / i) == 0) {
+							setParts = Math.max(setParts, i);
+							break;
+						}
 					}
 				}
+				parts = setParts;
 			}
-			parts = setParts;
-			isCheckedSevenToNine = true;
+			isCheckedSevenToNine = true;			
 		}
 
 		float value = gauge.getValue();
@@ -146,9 +165,7 @@ public class SkinGauge extends SkinObject {
 		if (type == ASSISTEASY || type == EASY || type == EXHARD || type == HAZARD || type == EXCLASS || type == EXHARDCLASS) {
 			exgauge = 4;
 		}
-
-		Color orgColor = new Color(sprite.getColor());
-
+		
 		final int notes = (type == HARD || type == EXHARD || type == HAZARD || type ==GrooveGauge.CLASS || type == EXCLASS || type == EXHARDCLASS)
 						&& value > 0 && ((int) (value * parts / max)) < 1
 						? 1 : (int) (value * parts / max);
@@ -160,8 +177,9 @@ public class SkinGauge extends SkinObject {
 					gr.x + gr.width * (i - 1) / parts, gr.y, gr.width / parts, gr.height);
 
 			if(animationType == ANIMATION_FLICKERING && images.length == 12 && i == notes) {
-				float alpha = orgColor.a * ((time % duration) < duration / 2 ? (time % duration) / ((float) duration / 2 - 1) : ((duration - 1) - (time % duration)) / ((float) duration / 2 - 1));
-				sprite.setColor(new Color(orgColor.r, orgColor.g, orgColor.b, alpha));
+				final Color orgColor = sprite.getColor();
+				flickerColor.set(orgColor.r, orgColor.g, orgColor.b, orgColor.a * ((time % duration) < duration / 2 ? (time % duration) / ((float) duration / 2 - 1) : ((duration - 1) - (time % duration)) / ((float) duration / 2 - 1)));
+				sprite.setColor(flickerColor);
 				sprite.draw(
 						images[8 + exgauge / 2 + (border < gauge.getGauge(type).getProperty().border ? 1 : 0)],
 						gr.x + gr.width * (i - 1) / parts, gr.y, gr.width / parts, gr.height);

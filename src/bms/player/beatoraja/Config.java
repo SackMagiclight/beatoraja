@@ -21,8 +21,13 @@ import bms.player.beatoraja.play.JudgeAlgorithm;
  */
 public class Config implements Validatable {
 
+	/**
+	 * 選択中のプレイヤー名
+	 */
 	private String playername;
-
+	/**
+	 * ディスプレイモード
+	 */
 	private DisplayMode displaymode = DisplayMode.WINDOW;
 	/**
 	 * 垂直同期
@@ -46,12 +51,14 @@ public class Config implements Validatable {
 	 */
 	public static final int AUDIODRIVER_SOUND = 0;
 	public static final int AUDIODRIVER_AUDIODEVICE = 1;
-
 	/**
 	 * オーディオ:PortAudio
 	 */
 	public static final int AUDIODRIVER_PORTAUDIO = 2;
 
+	/**
+	 * オーディオドライバー名
+	 */
 	private String audioDriverName = null;
 	/**
 	 * オーディオバッファサイズ。大きすぎると音声遅延が発生し、少なすぎるとノイズが発生する
@@ -112,17 +119,45 @@ public class Config implements Validatable {
 	 */
 	private int scrolldurationhigh = 50;
 	/**
+	 * プレビュー音源をループするかどうか
+	 */
+	private boolean loopPreview = true;
+	/**
+	 * スキン画像のキャッシュイメージを作成するかどうか
+	 */
+    private boolean cacheSkinImage = false;
+    /**
+     * songinfoデータベースを使用するかどうか
+     */
+    private boolean useSongInfo = true;
+
+	/**
 	 * 判定アルゴリズム
 	 */
 	private String judgeType = JudgeAlgorithm.Combo.name();
-
-    private boolean cacheSkinImage = false;
-
-    private boolean useSongInfo = true;
-
+	/**
+	 * HIDDENノートを表示するかどうか
+	 */
 	private boolean showhiddennote = false;
-
+	/**
+	 * 通過ノートを表示するかどうか
+	 */
 	private boolean showpastnote = false;
+
+	private String songpath = SONGPATH_DEFAULT;
+	public static final String SONGPATH_DEFAULT = "songdata.db";
+
+	private String songinfopath = SONGINFOPATH_DEFAULT;
+	public static final String SONGINFOPATH_DEFAULT = "songinfo.db";
+
+	private String tablepath = TABLEPATH_DEFAULT;
+	public static final String TABLEPATH_DEFAULT = "table";
+
+	private String playerpath = PLAYERPATH_DEFAULT;
+	public static final String PLAYERPATH_DEFAULT = "player";
+
+	private String skinpath = SKINPATH_DEFAULT;
+	public static final String SKINPATH_DEFAULT = "skin";
 
 	private String bgmpath = "";
 
@@ -158,6 +193,7 @@ public class Config implements Validatable {
 	private int autosavereplay[] = {0,0,0,0};
 
 	private int skinPixmapGen = 4;
+	private int stagefilePixmapGen = 3;
 	private int bannerPixmapGen = 2;
 	private int songResourceGen = 1;
 
@@ -330,6 +366,14 @@ public class Config implements Validatable {
 		this.scrolldurationhigh = scrolldurationhigh;
 	}
 
+	public boolean isLoopPreview() {
+		return loopPreview;
+	}
+
+	public void setLoopPreview(boolean loopPreview) {
+		this.loopPreview = loopPreview;
+	}
+
 	public float getKeyvolume() {
 		if(keyvolume < 0 || keyvolume > 1) {
 			keyvolume = 1;
@@ -462,6 +506,14 @@ public class Config implements Validatable {
 		this.skinPixmapGen = skinPixmapGen;
 	}
 
+	public int getStagefilePixmapGen() {
+		return stagefilePixmapGen;
+	}
+
+	public void setStagefilePixmapGen(int stagefilePixmapGen) {
+		this.stagefilePixmapGen = stagefilePixmapGen;
+	}
+
 	public int getBannerPixmapGen() {
 		return bannerPixmapGen;
 	}
@@ -492,6 +544,46 @@ public class Config implements Validatable {
 
 	public void setIpfsUrl(String ipfsUrl) {
 		this.ipfsurl = ipfsUrl;
+	}
+
+	public String getSongpath() {
+		return songpath;
+	}
+
+	public void setSongpath(String songpath) {
+		this.songpath = songpath;
+	}
+
+	public String getSonginfopath() {
+		return songinfopath;
+	}
+
+	public void setSonginfopath(String songinfopath) {
+		this.songinfopath = songinfopath;
+	}
+
+	public String getTablepath() {
+		return tablepath;
+	}
+
+	public void setTablepath(String tablepath) {
+		this.tablepath = tablepath;
+	}
+
+	public String getPlayerpath() {
+		return playerpath;
+	}
+
+	public void setPlayerpath(String playerpath) {
+		this.playerpath = playerpath;
+	}
+
+	public String getSkinpath() {
+		return skinpath;
+	}
+
+	public void setSkinpath(String skinpath) {
+		this.skinpath = skinpath;
 	}
 
 	public boolean validate() {
@@ -536,6 +628,11 @@ public class Config implements Validatable {
 			ipfsurl = "https://gateway.ipfs.io/";
 		}
 
+		songpath = songpath != null ? songpath : SONGPATH_DEFAULT;
+		songinfopath = songinfopath != null ? songinfopath : SONGINFOPATH_DEFAULT;
+		tablepath = tablepath != null ? tablepath : TABLEPATH_DEFAULT;
+		playerpath = playerpath != null ? playerpath : PLAYERPATH_DEFAULT;
+		skinpath = skinpath != null ? skinpath : SKINPATH_DEFAULT;
 		return true;
 	}
 
