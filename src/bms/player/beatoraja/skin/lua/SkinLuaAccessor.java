@@ -25,6 +25,31 @@ public class SkinLuaAccessor {
 
 	public SkinLuaAccessor (MainState state) {
         globals = JsePlatform.standardGlobals();
+		globals.set("timer", new OneArgFunction() {
+			@Override
+			public LuaValue call(LuaValue value) {
+				return LuaNumber.valueOf(state.main.getMicroTimer(value.toint()));
+			}
+		});
+		globals.set("timer_off_value", Long.MIN_VALUE);
+		globals.set("is_timer_on", new OneArgFunction() {
+			@Override
+			public LuaValue call(LuaValue value) {
+				return LuaNumber.valueOf(state.main.isTimerOn(value.toint()));
+			}
+		});
+		globals.set("now_timer", new OneArgFunction() {
+			@Override
+			public LuaValue call(LuaValue value) {
+				return LuaNumber.valueOf(state.main.getNowMicroTime(value.toint()));
+			}
+		});
+		globals.set("time", new ZeroArgFunction() {
+			@Override
+			public LuaValue call() {
+				return LuaNumber.valueOf(state.main.getNowMicroTime());
+			}
+		});
         globals.set("rate", new ZeroArgFunction() {
 			@Override
 			public LuaValue call() {
@@ -67,7 +92,7 @@ public class SkinLuaAccessor {
 				return LuaDouble.valueOf(state.main.getConfig().getSystemvolume());
 			}
 		});
-		globals.set("volume_sys", new OneArgFunction() {
+		globals.set("set_volume_sys", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
 				state.main.getConfig().setSystemvolume(value.tofloat());
@@ -80,7 +105,7 @@ public class SkinLuaAccessor {
 				return LuaDouble.valueOf(state.main.getConfig().getKeyvolume());
 			}
 		});
-		globals.set("volume_key", new OneArgFunction() {
+		globals.set("set_volume_key", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
 				state.main.getConfig().setKeyvolume(value.tofloat());
@@ -93,7 +118,7 @@ public class SkinLuaAccessor {
 				return LuaDouble.valueOf(state.main.getConfig().getBgvolume());
 			}
 		});
-		globals.set("volume_bg", new OneArgFunction() {
+		globals.set("set_volume_bg", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
 				state.main.getConfig().setBgvolume(value.tofloat());
@@ -127,87 +152,199 @@ public class SkinLuaAccessor {
 			}
 		});
 	}
-	
+
 	public BooleanProperty loadBooleanProperty(String script) {
 		try {
 			final LuaValue lv = globals.load("return " + script);
-			return new BooleanProperty() {
-				@Override
-				public boolean isStatic(MainState state) {
-					return false;
-				}
-
-				@Override
-				public boolean get(MainState state) {
-					return lv.call().toboolean();
-				}
-			};
+			return loadBooleanProperty(lv.checkfunction());
 		} catch (RuntimeException e) {
 			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
 		}
 		return null;
 	}
-	
+
+	public BooleanProperty loadBooleanProperty(LuaFunction function) {
+		return new BooleanProperty() {
+			@Override
+			public boolean isStatic(MainState state) {
+				return false;
+			}
+
+			@Override
+			public boolean get(MainState state) {
+				try {
+					return function.call().toboolean();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外 : " + e.getMessage());
+					return false;
+				}
+			}
+		};
+	}
+
 	public IntegerProperty loadIntegerProperty(String script) {
 		try {
 			final LuaValue lv = globals.load("return " + script);
-			return new IntegerProperty() {
-				@Override
-				public int get(MainState state) {
-					return lv.call().toint();
-				}
-			};			
+			return loadIntegerProperty(lv.checkfunction());
 		} catch (RuntimeException e) {
 			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
 		}
 		return null;
 	}
-	
+
+	public IntegerProperty loadIntegerProperty(LuaFunction function) {
+		return new IntegerProperty() {
+			@Override
+			public int get(MainState state) {
+				try{
+					return function.call().toint();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外 : " + e.getMessage());
+					return 0;
+				}
+			}
+		};
+	}
+
 	public FloatProperty loadFloatProperty(String script) {
 		try {
 			final LuaValue lv = globals.load("return " + script);
-			return new FloatProperty() {
-				@Override
-				public float get(MainState state) {
-					return lv.call().tofloat();
-				}
-			};			
+			return loadFloatProperty(lv.checkfunction());
 		} catch (RuntimeException e) {
 			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
 		}
 		return null;
 	}
-	
-	public Event loadEvent(String script) {
-		try {
-			final LuaValue lv = globals.load(script);
-			return new Event() {
-				@Override
-				public void exec(MainState state) {
-					lv.call();
+
+	public FloatProperty loadFloatProperty(LuaFunction function) {
+		return new FloatProperty() {
+			@Override
+			public float get(MainState state) {
+				try{
+					return function.call().tofloat();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外 : " + e.getMessage());
+					return 0f;
 				}
-			};			
+			}
+		};
+	}
+
+	public StringProperty loadStringProperty(String script) {
+		try {
+			final LuaValue lv = globals.load("return " + script);
+			return loadStringProperty(lv.checkfunction());
 		} catch (RuntimeException e) {
 			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
 		}
 		return null;
+	}
+
+	public StringProperty loadStringProperty(LuaFunction function) {
+		return new StringProperty() {
+			@Override
+			public String get(MainState state) {
+				try {
+					return function.call().tojstring();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外：" + e.getMessage());
+					return "";
+				}
+			}
+		};
+	}
+
+	/**
+	 * Creates a timer property from Lua code.
+	 * If {@code script} returns a function, the returned function is regarded as a timer function
+	 * which will be called every frame or more frequently.
+	 * Otherwise, {@code script} itself is regarded as a timer function.
+	 * <p>NOTE: The former case is useful to synthesize a stateful custom timer in a JSON skin.</p>
+	 * <p>NOTE: A timer function returns (i) start time in microseconds if on, or (ii) Long.MIN_VALUE if off.</p>
+	 * @param script Lua script producing a function (producing a number) or a number
+	 * @return new timer property
+	 */
+	public TimerProperty loadTimerProperty(String script) {
+		try {
+			final LuaValue lv = globals.load("return " + script);
+			final LuaValue trialCallResult = lv.call();
+			if (trialCallResult.isfunction()) {
+				// タイマー関数を返す場合
+				return loadTimerProperty(trialCallResult.checkfunction());
+			} else {
+				// 数値を返す場合
+				return loadTimerProperty(lv.checkfunction());
+			}
+		} catch (RuntimeException e) {
+			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
+		}
+		return null;
+	}
+
+	/**
+	 * Creates a timer property from Lua function.
+	 * The given function is always regarded as a timer function which will be called every frame.
+	 * @param timerFunction Lua function producing a number
+	 * @return new timer property
+	 */
+	public TimerProperty loadTimerProperty(LuaFunction timerFunction) {
+		return new TimerProperty() {
+			@Override
+			public long getMicro(MainState state) {
+				try {
+					return timerFunction.call().tolong();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外：" + e.getMessage());
+					return Long.MIN_VALUE;
+				}
+			}
+		};
+	}
+
+	public Event loadEvent(String script) {
+		try {
+			final LuaValue lv = globals.load(script);
+			return loadEvent(lv.checkfunction());
+		} catch (RuntimeException e) {
+			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
+		}
+		return null;
+	}
+
+	public Event loadEvent(LuaFunction function) {
+		return new Event() {
+			@Override
+			public void exec(MainState state) {
+				try{
+					function.call();
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外：" + e.getMessage());
+				}
+			}
+		};
 	}
 
 	public FloatWriter loadFloatWriter(String script) {
 		try {
 			final LuaValue lv = globals.load(script);
-			return new FloatWriter() {
-
-				@Override
-				public void set(MainState state, float value) {
-					lv.call(LuaDouble.valueOf(value));
-				}
-				
-			};			
+			return loadFloatWriter(lv.checkfunction());
 		} catch (RuntimeException e) {
 			Logger.getGlobal().warning("Lua解析時の例外 : " + e.getMessage());
 		}
 		return null;
+	}
+
+	public FloatWriter loadFloatWriter(LuaFunction function) {
+		return new FloatWriter() {
+			@Override
+			public void set(MainState state, float value) {
+				try{
+					function.call(LuaDouble.valueOf(value));
+				} catch (RuntimeException e) {
+					Logger.getGlobal().warning("Lua実行時の例外：" + e.getMessage());
+				}
+			}
+		};
 	}
 
 	public LuaValue exec(String script) {

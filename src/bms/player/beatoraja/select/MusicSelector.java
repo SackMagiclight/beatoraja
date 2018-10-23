@@ -4,12 +4,10 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import java.nio.file.DirectoryStream;
 import java.nio.file.*;
-import java.util.*;
 import java.util.logging.Logger;
 
 import com.badlogic.gdx.graphics.Color;
-import com.badlogic.gdx.utils.Array;
-import com.badlogic.gdx.utils.ObjectMap;
+import com.badlogic.gdx.utils.*;
 import com.badlogic.gdx.utils.ObjectMap.Keys;
 
 import bms.model.Mode;
@@ -116,8 +114,8 @@ public class MusicSelector extends MainState {
 			}
 		};
 
-		if(main.getIRConnection().length > 0) {
-			IRResponse<PlayerInformation[]> response = main.getIRConnection()[0].getRivals();
+		if(main.getIRStatus().length > 0) {
+			IRResponse<PlayerInformation[]> response = main.getIRStatus()[0].connection.getRivals();
 			if(response.isSucceeded()) {
 				try {
 					// ライバルスコアデータベース作成
@@ -167,7 +165,7 @@ public class MusicSelector extends MainState {
 						new Thread(() -> {
 							scoredb.createTable();
 							scoredb.setInformation(rival);
-							IRResponse<IRScoreData[]> scores = main.getIRConnection()[0].getPlayData(rival.getId(), null);
+							IRResponse<IRScoreData[]> scores = main.getIRStatus()[0].connection.getPlayData(rival.getId(), null);
 							if(scores.isSucceeded()) {
 								scoredb.setScoreData(scores.getData());
 								Logger.getGlobal().info("IRからのスコア取得完了 : " + rival.getName());
@@ -298,14 +296,14 @@ public class MusicSelector extends MainState {
 				if (((SongBar) current).existsSong()) {
 					resource.clear();
 					if (resource.setBMSFile(Paths.get(song.getPath()), play)) {
-						final Deque<DirectoryBar> dir = this.getBarRender().getDirectory();
-						List<String> urls = Arrays.asList(main.getConfig().getTableURL());
+						final Queue<DirectoryBar> dir = this.getBarRender().getDirectory();
+						Array<String> urls = new Array(main.getConfig().getTableURL());
 
 						boolean isdtable = false;
 						for(DirectoryBar bar: dir){
 							if (bar instanceof TableBar) {
 								String currenturl = ((TableBar) bar).getUrl();
-								if (currenturl != null && urls.contains(currenturl)) {
+								if (currenturl != null && urls.contains(currenturl, false)) {
 									isdtable = true;
 									resource.setTablename(bar.getTitle());
 								}
