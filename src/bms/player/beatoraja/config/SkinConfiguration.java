@@ -7,6 +7,7 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 import bms.player.beatoraja.SkinConfig;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.skin.*;
+import bms.player.beatoraja.skin.json.JSONSkinLoader;
 import bms.player.beatoraja.skin.lr2.LR2SkinHeaderLoader;
 import bms.player.beatoraja.skin.lua.LuaSkinLoader;
 
@@ -90,10 +91,10 @@ public class SkinConfiguration extends MainState {
 		return selectedSkinHeader;
 	}
 
-	public void executeClickEvent(int id, int arg) {
+	public void executeEvent(int id, int arg1, int arg2) {
 		switch (id) {
 		case BUTTON_CHANGE_SKIN:
-			if (arg >= 0) {
+			if (arg1 >= 0) {
 				setNextSkin();
 			} else {
 				setPrevSkin();
@@ -104,7 +105,7 @@ public class SkinConfiguration extends MainState {
 				int index = SkinPropertyMapper.getSkinCustomizeIndex(id) + customOptionOffset;
 				if (customOptions != null && index < customOptions.size()) {
 					CustomItemBase item = customOptions.get(index);
-					if (arg >= 0) {
+					if (arg1 >= 0) {
 						if (item.getvalue() < item.getMax()) {
 							item.setValue(item.getvalue() + 1);
 						} else {
@@ -118,10 +119,11 @@ public class SkinConfiguration extends MainState {
 						}
 					}
 				}
-			}
-			if (SkinPropertyMapper.isSkinSelectTypeId(id)) {
+			} else if (SkinPropertyMapper.isSkinSelectTypeId(id)) {
 				SkinType t = SkinPropertyMapper.getSkinSelectType(id);
 				changeSkinType(t);
+			} else {
+				super.executeEvent(id, arg1, arg2);
 			}
 		}
 	}
@@ -135,7 +137,7 @@ public class SkinConfiguration extends MainState {
 				availableSkins.add(header);
 			}
 		}
-		if (this.config != null) {
+		if (config != null && this.config.getPath() != null && !config.getPath().isEmpty()) {
 			int index = -1;
 			for (int i = 0; i < availableSkins.size(); i++) {
 				SkinHeader header = availableSkins.get(i);
