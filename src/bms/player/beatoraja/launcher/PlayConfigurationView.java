@@ -683,16 +683,21 @@ public class PlayConfigurationView implements Initializable {
 		chooser.setTitle("楽曲のルートフォルダを選択してください");
 		File f = chooser.showDialog(null);
 		if (f != null) {
+			final String defaultPath = new File(".").getAbsoluteFile().getParent() + File.separatorChar;;
+			String targetPath = f.getAbsolutePath();
+			if(targetPath.startsWith(defaultPath)) {
+				targetPath = f.getAbsolutePath().substring(defaultPath.length());
+			}
 			boolean unique = true;
 			for (String path : bmsroot.getItems()) {
-				if (path.equals(f.getPath()) || f.getPath().startsWith(path + File.separatorChar)) {
+				if (path.equals(targetPath) || targetPath.startsWith(path + File.separatorChar)) {
 					unique = false;
 					break;
 				}
 			}
 			if (unique) {
-				bmsroot.getItems().add(f.getPath());
-				loadBMSPath(f.getPath());
+				bmsroot.getItems().add(targetPath);
+				loadBMSPath(targetPath);
 			}
 		}
 	}
@@ -712,16 +717,21 @@ public class PlayConfigurationView implements Initializable {
 		if (db.hasFiles()) {
 			for (File f : db.getFiles()) {
 				if (f.isDirectory()) {
+					final String defaultPath = new File(".").getAbsoluteFile().getParent() + File.separatorChar;;
+					String targetPath = f.getAbsolutePath();
+					if(targetPath.startsWith(defaultPath)) {
+						targetPath = f.getAbsolutePath().substring(defaultPath.length());
+					}
 					boolean unique = true;
 					for (String path : bmsroot.getItems()) {
-						if (path.equals(f.getPath()) || f.getPath().startsWith(path + File.separatorChar)) {
+						if (path.equals(targetPath) || targetPath.startsWith(path + File.separatorChar)) {
 							unique = false;
 							break;
 						}
 					}
 					if (unique) {
-						bmsroot.getItems().add(f.getPath());
-						loadBMSPath(f.getPath());
+						bmsroot.getItems().add(targetPath);
+						loadBMSPath(targetPath);
 					}
 				}
 			}
@@ -1110,8 +1120,10 @@ public class PlayConfigurationView implements Initializable {
 	}
 
 	enum PlayMode {
-		BEAT_7K("5/7KEYS"),
-		BEAT_14K("10/14KEYS"),
+		BEAT_5K("5KEYS"),
+		BEAT_7K("7KEYS"),
+		BEAT_10K("10KEYS"),
+		BEAT_14K("14KEYS"),
 		POPN_9K("9KEYS"),
 		KEYBOARD_24K("24KEYS"),
 		KEYBOARD_24K_DOUBLE("24KEYS DOUBLE");
