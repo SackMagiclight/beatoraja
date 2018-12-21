@@ -4,10 +4,16 @@ import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.nio.file.*;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
 import java.util.*;
 import java.util.logging.Logger;
 
+import javax.crypto.*;
+import javax.crypto.spec.SecretKeySpec;
+
 import bms.player.beatoraja.play.TargetProperty;
+import bms.player.beatoraja.select.BarSorter;
 import bms.player.beatoraja.skin.SkinType;
 
 import bms.model.Mode;
@@ -141,6 +147,11 @@ public class PlayerConfig {
 	private PlayModeConfig mode24 = new PlayModeConfig(Mode.KEYBOARD_24K);
 
 	private PlayModeConfig mode24double = new PlayModeConfig(Mode.KEYBOARD_24K_DOUBLE);
+	
+	/**
+	 * 選択中の選曲時ソート
+	 */
+	private int sort;
 
 	/**
 	 * 選曲時でのキー入力方式
@@ -402,6 +413,14 @@ public class PlayerConfig {
 	public Mode getMode()  {
 		return mode;
 	}
+	
+	public int getSort() {
+		return this.sort ;
+	}
+
+	public void setSort(int sort) {
+		this.sort = sort;
+	}
 
 	public int getMusicselectinput() {
 		return musicselectinput;
@@ -627,6 +646,8 @@ public class PlayerConfig {
 		mode9.validate(9);
 		mode24.validate(26);
 		mode24double.validate(52);
+		
+		sort = MathUtils.clamp(sort, 0 , BarSorter.values().length - 1);
 
 		gauge = MathUtils.clamp(gauge, 0, 5);
 		random = MathUtils.clamp(random, 0, 9);
@@ -656,6 +677,9 @@ public class PlayerConfig {
 			irconfig[0] = ir;
 			irname = password = userid = "";
 			irsend = 0;
+		}
+		for(IRConfig ir : irconfig) {
+			ir.validate();
 		}
 	}
 
@@ -753,28 +777,50 @@ public class PlayerConfig {
 
 		private String userid = "";
 
+		private String cuserid = "";
+
 		private String password = "";
 
+		private String cpassword = "";
+
 		private int irsend = 0;
+		
+		private static final String KEY = "0123456789abcdef";
 
 		public static final int IR_SEND_ALWAYS = 0;
 		public static final int IR_SEND_COMPLETE_SONG = 1;
 		public static final int IR_SEND_UPDATE_SCORE = 2;
 
 		public String getUserid() {
+			if(cuserid != null && cuserid.length() > 0) {
+				try {
+					return CipherUtils.decrypt(cuserid, KEY, "AES");
+				} catch (Exception e) {
+					e.printStackTrace();
+				}				
+			}
 			return userid;
 		}
 
 		public void setUserid(String userid) {
 			this.userid = userid;
+			validate();
 		}
 
 		public String getPassword() {
+			if(cpassword != null && cpassword.length() > 0) {
+				try {
+					return CipherUtils.decrypt(cpassword, KEY, "AES");
+				} catch (Exception e) {
+					e.printStackTrace();
+				}				
+			}
 			return password;
 		}
 
 		public void setPassword(String password) {
 			this.password = password;
+			validate();
 		}
 
 		public String getIrname() {
@@ -792,5 +838,40 @@ public class PlayerConfig {
 		public void setIrsend(int irsend) {
 			this.irsend = irsend;
 		}
-	}
+		
+		public void validate() {
+			if(userid != null && userid.length() > 0) {
+				try {
+					cuserid = CipherUtils.encrypt(userid, KEY, "AES");
+					userid = "";
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+				
+			}
+			if(password != null && password.length() > 0) {
+				try {
+					cpassword = CipherUtils.encrypt(password, KEY, "AES");
+					password = "";
+				} catch (Exception e) {
+					e.printStackTrace();
+				}
+			}
+		}
+	}	
+}
+
+class CipherUtils {
+	
+    public static String encrypt(String source, String key, String algorithm) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+        Cipher cipher = Cipher.getInstance(algorithm);
+        cipher.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key.getBytes(), algorithm));
+        return new String(Base64.getEncoder().encode(cipher.doFinal(source.getBytes())));
+    }
+    
+    public static String decrypt(String encryptSource, String key, String algorithm) throws NoSuchAlgorithmException, NoSuchPaddingException, InvalidKeyException, IllegalBlockSizeException, BadPaddingException {
+        Cipher cipher = Cipher.getInstance(algorithm);
+        cipher.init(Cipher.DECRYPT_MODE, new SecretKeySpec(key.getBytes(), algorithm));
+        return new String(cipher.doFinal(Base64.getDecoder().decode(encryptSource.getBytes())));
+    }
 }
