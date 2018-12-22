@@ -12,6 +12,7 @@ import java.util.logging.Logger;
 import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
 
+import bms.player.beatoraja.ir.IRConnectionManager;
 import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.select.BarSorter;
 import bms.player.beatoraja.skin.SkinType;
@@ -678,9 +679,18 @@ public class PlayerConfig {
 			irname = password = userid = "";
 			irsend = 0;
 		}
-		for(IRConfig ir : irconfig) {
-			ir.validate();
+		
+		for(int i = 0;i < irconfig.length;i++) {
+			if(irconfig[i] == null || irconfig[i].getIrname() == null) {
+				continue;
+			}
+			for(int j = i + 1;j < irconfig.length;j++) {
+				if(irconfig[j] != null && irconfig[i].getIrname().equals(irconfig[j].getIrname())) {
+					irconfig[j].setIrname(null);
+				}				
+			}
 		}
+		irconfig = Validatable.removeInvalidElements(irconfig);
 	}
 
 	public static void init(Config config) {
@@ -772,7 +782,7 @@ public class PlayerConfig {
 		}
 	}
 	
-	public static class IRConfig {
+	public static class IRConfig implements Validatable{
 		private String irname = "";
 
 		private String userid = "";
@@ -839,7 +849,11 @@ public class PlayerConfig {
 			this.irsend = irsend;
 		}
 		
-		public void validate() {
+		public boolean validate() {
+			if(irname == null || irname.length() == 0 || IRConnectionManager.getIRConnectionClass(irname) == null) {
+				return false;
+			}
+			
 			if(userid != null && userid.length() > 0) {
 				try {
 					cuserid = CipherUtils.encrypt(userid, KEY, "AES");
@@ -857,6 +871,7 @@ public class PlayerConfig {
 					e.printStackTrace();
 				}
 			}
+			return true;
 		}
 	}	
 }
