@@ -18,8 +18,6 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 	
 	private BlockingStream stream;
 
-	private int sampleRate;
-	private int channels;
 	/**
 	 * ミキサー入力
 	 */
@@ -88,26 +86,11 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 
 	@Override
 	protected PCM getKeySound(Path p) {
-		PCM wav = PCM.load(p.toString());
-		
-		if (wav != null && wav.sampleRate != sampleRate) {
-			wav = wav.changeSampleRate(sampleRate);
-		}
-		if (wav != null && wav.channels != channels) {
-			wav = wav.changeChannels(channels);
-		}
-
-		return wav;
+		return PCM.load(p.toString(), this);
 	}
 
 	@Override
 	protected PCM getKeySound(PCM pcm) {
-		if (pcm.sampleRate != sampleRate) {
-			pcm = pcm.changeSampleRate(sampleRate);
-		}
-		if (pcm.channels != channels) {
-			pcm = pcm.changeChannels(channels);
-		}
 		return pcm;
 	}
 
@@ -196,6 +179,10 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 								final short[] sample = (short[]) input.pcm.sample;
 								wav_l += ((float) sample[input.pos + input.pcm.start]) * input.volume / Short.MAX_VALUE;
 								wav_r += ((float) sample[input.pos+1 + input.pcm.start]) * input.volume / Short.MAX_VALUE;																
+							} else if(input.pcm instanceof BytePCM) {
+								final byte[] sample = (byte[]) input.pcm.sample;
+								wav_l += ((float) (sample[input.pos + input.pcm.start] - 128)) * input.volume / Byte.MAX_VALUE;
+								wav_r += ((float) (sample[input.pos+1 + input.pcm.start] - 128)) * input.volume / Byte.MAX_VALUE;																
 							}
 							input.posf += gpitch * input.pitch;
 							int inc = (int)input.posf;
