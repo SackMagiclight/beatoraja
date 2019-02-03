@@ -83,7 +83,9 @@ public class MusicSelector extends MainState {
 	public static final int SOUND_SCRATCH = 1;
 	public static final int SOUND_FOLDEROPEN = 2;
 	public static final int SOUND_FOLDERCLOSE = 3;
-	public static final int SOUND_CHANGEOPTION = 4;
+	public static final int SOUND_OPTIONCHANGE = 4;
+	public static final int SOUND_OPTIONOPEN = 5;
+	public static final int SOUND_OPTIONCLOSE = 6;
 
 	private PlayMode play = null;
 
@@ -220,7 +222,9 @@ public class MusicSelector extends MainState {
 		setSound(SOUND_SCRATCH, "scratch.wav", SoundType.SOUND, false);
 		setSound(SOUND_FOLDEROPEN, "f-open.wav", SoundType.SOUND,false);
 		setSound(SOUND_FOLDERCLOSE, "f-close.wav", SoundType.SOUND,false);
-		setSound(SOUND_CHANGEOPTION, "o-change.wav", SoundType.SOUND,false);
+		setSound(SOUND_OPTIONCHANGE, "o-change.wav", SoundType.SOUND,false);
+		setSound(SOUND_OPTIONOPEN, "o-open.wav", SoundType.SOUND,false);
+		setSound(SOUND_OPTIONCLOSE, "o-close.wav", SoundType.SOUND,false);
 
 		play = null;
 		showNoteGraph = false;
@@ -311,7 +315,7 @@ public class MusicSelector extends MainState {
 							}
 						}
 						preview.stop();
-						main.changeState(MainController.STATE_DECIDE);
+						main.changeState(MainStateType.DECIDE);
 						banners.disposeOld();
 						stagefiles.disposeOld();
 					} else {
@@ -341,7 +345,7 @@ public class MusicSelector extends MainState {
 						resource.setAutoPlaySongs(paths.toArray(Path.class), false);
 						if(resource.nextSong()) {
 							preview.stop();
-							main.changeState(MainController.STATE_DECIDE);
+							main.changeState(MainStateType.DECIDE);
 							banners.disposeOld();
 							stagefiles.disposeOld();
 						}
@@ -357,10 +361,10 @@ public class MusicSelector extends MainState {
 
 		if (input.getNumberState()[6]) {
 			preview.stop();
-			main.changeState(MainController.STATE_CONFIG);
+			main.changeState(MainStateType.CONFIG);
 		} else if (input.isActivated(KeyCommand.OPEN_SKIN_CONFIGURATION)) {
 			preview.stop();
-			main.changeState(MainController.STATE_SKIN_SELECT);
+			main.changeState(MainStateType.SKINCONFIG);
 		}
 
 		musicinput.input();
@@ -449,7 +453,7 @@ public class MusicSelector extends MainState {
 			course.getCourseData().setSong(resource.getCourseBMSModels());
 			resource.setCourseData(course.getCourseData());
 			resource.setBMSFile(files[0], mode);
-			main.changeState(MainController.STATE_DECIDE);
+			main.changeState(MainStateType.DECIDE);
 			banners.disposeOld();
 			stagefiles.disposeOld();
 		} else {
