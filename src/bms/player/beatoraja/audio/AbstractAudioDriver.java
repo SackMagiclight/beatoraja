@@ -12,7 +12,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
 
 import com.badlogic.gdx.utils.*;
 
@@ -469,35 +468,72 @@ public abstract class AbstractAudioDriver<T> implements AudioDriver {
 			super(maxgen);
 		}
 
-		private String path;
-		private PCM wav;
+		/**
+		 * 音源PCM群
+		 */
+		private ObjectMap<String, PCM> audioSource = new ObjectMap<>();
+		
+		/**
+		 * 音源PCM操作に対するLOCKオブジェクト群
+		 */
+		private ObjectMap<String, Object> pathLockObjects = new ObjectMap<String, Object>();
 
 		@Override
-		protected T load(AudioKey key) {
-			if (!key.path.equals(path)) {
-				wav = null;
+		public T get(AudioKey key) {
+			
+			// LOCKオブジェクトの取得または生成
+			Object lockObj;
+			synchronized (this) {
+				lockObj = pathLockObjects.get(key.path);
+				if(lockObj == null) {
+					lockObj = new Object();
+					pathLockObjects.put(key.path, lockObj);
+				}
 			}
+			
+			synchronized (lockObj) {
+				// 音源ごとの処理
+	 			ResourceCacheElement<T> ie = image.get(key);
+	 			if(ie == null) {
+	 				T resource = load(key);
+	 				if(resource != null) {
+	 					ie = new ResourceCacheElement<T>(resource);
+	 					image.put(key, ie);
+	 				}
+	 			} else {
+	 				ie.gen = 0;
+	 			}
+	 			
+	 			return ie != null ? ie.image : null;
+			}
+		}
+
+		
+		@Override
+		protected T load(AudioKey key) {
+			PCM pcm = audioSource.get(key.path);
+			if(pcm == null) {
+				// 音源データが未読み込みなら読み込み
+				pcm = PCM.load(key.path, AbstractAudioDriver.this);
+				synchronized (this) {
+					audioSource.put(key.path, pcm);
+				}
+			}
+			
 			if (key.start == 0 && key.duration == 0) {
 				// 音切りなしのケース
-				return getKeySound(Paths.get(key.path));
+				return getKeySound(pcm);
 			} else {
-				if (wav == null) {
-					wav = PCM.load(key.path, AbstractAudioDriver.this);
-				}
-
-				if (wav != null) {
-					path = key.path;
-					try {
-						final PCM slicewav = wav.slice(key.start, key.duration);
-						return slicewav != null ? getKeySound(slicewav) : null;
-						// System.out.println("WAV slicing - Name:"
-						// + name + " ID:" + note.getWav() +
-						// " start:" + note.getStarttime() +
-						// " duration:" + note.getDuration());
-					} catch (Throwable e) {
-						Logger.getGlobal().warning("音源(wav)ファイルスライシング失敗。" + e.getMessage());
-						e.printStackTrace();
-					}
+				try {
+					final PCM slicewav = pcm.slice(key.start, key.duration);
+					return slicewav != null ? getKeySound(slicewav) : null;
+					// System.out.println("WAV slicing - Name:"
+					// + name + " ID:" + note.getWav() +
+					// " start:" + note.getStarttime() +
+					// " duration:" + note.getDuration());
+				} catch (Throwable e) {
+					Logger.getGlobal().warning("音源(wav)ファイルスライシング失敗。" + e.getMessage());
+					e.printStackTrace();
 				}
 			}
 			return null;

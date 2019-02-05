@@ -21,7 +21,7 @@ public abstract class ResourcePool<K, V> implements Disposable {
 	/**
 	 * リソース
 	 */
-	private ObjectMap<K, ResourceCacheElement<V>> image = new ObjectMap<K, ResourceCacheElement<V>> ();
+	protected ObjectMap<K, ResourceCacheElement<V>> image = new ObjectMap<K, ResourceCacheElement<V>> ();
 
 	public ResourcePool(int maxgen) {
 		this.maxgen = maxgen;
@@ -44,19 +44,21 @@ public abstract class ResourcePool<K, V> implements Disposable {
 	 * @param key リソースのキー
 	 * @return リソース。読めなかった場合はnullを返す
 	 */
- 	public synchronized V get(K key) {
-		ResourceCacheElement<V> ie = image.get(key);
-		if(ie == null) {
-			V resource = load(key);
-			if(resource != null) {
-				ie = new ResourceCacheElement<V>(resource);
-				image.put(key, ie);
-			}
-		} else {
-			ie.gen = 0;
+ 	public V get(K key) {
+ 		synchronized (this) {
+ 			ResourceCacheElement<V> ie = image.get(key);
+ 			if(ie == null) {
+ 				V resource = load(key);
+ 				if(resource != null) {
+ 					ie = new ResourceCacheElement<V>(resource);
+ 					image.put(key, ie);
+ 				}
+ 			} else {
+ 				ie.gen = 0;
+ 			}
+ 			
+ 			return ie != null ? ie.image : null;
 		}
-		
-		return ie != null ? ie.image : null;
 	}
 
  	private final Array<K> removes = new Array<K>();
@@ -114,7 +116,7 @@ public abstract class ResourcePool<K, V> implements Disposable {
 	 *
 	 * @param <R>
 	 */
-	private static class ResourceCacheElement<R> {
+	protected static class ResourceCacheElement<R> {
 		/**
 		 * リソース
 		 */
