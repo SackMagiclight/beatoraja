@@ -140,12 +140,12 @@ public class BMSPlayer extends MainState {
 			if (autoplay.isReplayMode()) {
 				model = resource.getGenerator().generate(replay.rand);
 				// 暫定処置
-				BMSModelUtils.setStartNoteSection(model, 1000);
+				BMSModelUtils.setStartNoteTime(model, 1000);
 				BMSPlayerRule.validate(model, false);
 			} else if (resource.getReplayData().pattern != null) {
 				model = resource.getGenerator().generate(resource.getReplayData().rand);
 				// 暫定処置
-				BMSModelUtils.setStartNoteSection(model, 1000);
+				BMSModelUtils.setStartNoteTime(model, 1000);
 				BMSPlayerRule.validate(model, false);
 			}
 			Logger.getGlobal().info("譜面分岐 : " + Arrays.toString(model.getRandom()));
@@ -342,17 +342,11 @@ public class BMSPlayer extends MainState {
 		setSound(SOUND_GUIDE_SE_GD, "guide-gd.wav", SoundType.SOUND, false);
 
 		final BMSPlayerInputProcessor input = main.getInputProcessor();
-		input.setMinimumInputDutration(conf.getInputduration());
-		PlayModeConfig pc = config.getPlayConfig(model.getMode());
 		if(autoplay == PlayMode.PLAY || autoplay == PlayMode.PRACTICE) {
-			input.setPlayConfig(pc);
-		}
-		if (autoplay.isAutoPlayMode() || autoplay.isReplayMode()) {
+			input.setPlayConfig(config.getPlayConfig(model.getMode()));
+		} else if (autoplay.isAutoPlayMode() || autoplay.isReplayMode()) {
 			input.setEnable(false);
 		}
-		input.setKeyboardConfig(pc.getKeyboardConfig());
-		input.setControllerConfig(pc.getController());
-		input.setMidiConfig(pc.getMidiConfig());
 		lanerender = new LaneRenderer(this, model);
 		for (CourseData.CourseDataConstraint i : resource.getConstraint()) {
 			if (i == NO_SPEED) {
@@ -448,6 +442,7 @@ public class BMSPlayer extends MainState {
 			if (main.isTimerOn(TIMER_PLAY)) {
 				resource.reloadBMSFile();
 				model = resource.getBMSModel();
+				main.getPlayerResource().getSongdata().setBMSModel(model);
 				lanerender.init(model);
 				keyinput.setKeyBeamStop(false);
 				main.setTimerOff(TIMER_PLAY);
