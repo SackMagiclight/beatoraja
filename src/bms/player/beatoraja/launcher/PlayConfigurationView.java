@@ -235,6 +235,8 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private CheckBox analogScratch;
 	@FXML
+	private ComboBox<Integer> analogScratchMode;
+	@FXML
 	private NumericSpinner<Integer> analogScratchThreshold;
     @FXML
     private CheckBox usecim;
@@ -267,23 +269,16 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private SkinConfigurationView skinController;
 	@FXML
+	private IRConfigurationView irController;
+	@FXML
 	private CourseEditorView courseController;
+	@FXML
+	private FolderEditorView tableController;
 
 	private Config config;
 	private PlayerConfig player;
 	@FXML
 	private CheckBox folderlamp;
-
-	@FXML
-	private ComboBox<String> irname;
-	@FXML
-	private Hyperlink irhome;
-	@FXML
-	private TextField iruserid;
-	@FXML
-	private PasswordField irpassword;
-	@FXML
-	private ComboBox<Integer> irsend;
 
 	private MainLoader loader;
 
@@ -305,6 +300,8 @@ public class PlayConfigurationView implements Initializable {
 		lr2configuration.setVgap(4);
 		lr2configurationassist.setHgap(25);
 		lr2configurationassist.setVgap(4);
+
+		initComboBox(analogScratchMode, new String[] { "Ver. 2 (Newest)", "Ver. 1 (~0.6.9)" });
 
 		String[] scoreOptions = new String[] { "OFF", "MIRROR", "RANDOM", "R-RANDOM", "S-RANDOM", "SPIRAL", "H-RANDOM",
 				"ALL-SCR", "RANDOM-EX", "S-RANDOM-EX" };
@@ -336,16 +333,12 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(autosavereplay2, autosaves);
 		initComboBox(autosavereplay3, autosaves);
 		initComboBox(autosavereplay4, autosaves);
-		initComboBox(irsend, new String[] { arg1.getString("IR_SEND_ALWAYS"), arg1.getString("IR_SEND_FINISH"), arg1.getString("IR_SEND_UPDATE")});
 		initComboBox(audio, new String[] { "OpenAL (LibGDX Sound)", "OpenAL (LibGDX AudioDevice)", "PortAudio"});
 		audio.getItems().setAll(0, 2);
 
 		String[] audioPlaySpeedControls = new String[] { "UNPROCESSED", "FREQUENCY" };
 		initComboBox(audioFreqOption, audioPlaySpeedControls);
 		initComboBox(audioFastForward, audioPlaySpeedControls);
-
-		irname.getItems().setAll(IRConnectionManager.getAllAvailableIRConnectionName());
-		irname.getItems().add(null);
 
 		newVersionCheck();
 		Logger.getGlobal().info("初期化時間(ms) : " + (System.currentTimeMillis() - t));
@@ -461,6 +454,8 @@ public class PlayConfigurationView implements Initializable {
 					config.getBmsroot());
 			courseController.setSongDatabaseAccessor(songdb);
 			courseController.update("default");
+			tableController.init(config, songdb);
+			tableController.update("default.json");
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
@@ -521,13 +516,7 @@ public class PlayConfigurationView implements Initializable {
 		markprocessednote.setSelected(player.isMarkprocessednote());
 		target.setValue(player.getTarget());
 
-		// TODO 複数IR編集への対応
-		IRConfig ir = player.getIrconfig().length > 0 ? player.getIrconfig()[0] : new IRConfig();
-		irname.setValue(ir.getIrname());
-		updateIRConnection();
-		iruserid.setText(ir.getUserid());
-		irpassword.setText(ir.getPassword());
-		irsend.setValue(ir.getIrsend());			
+		irController.update(player);
 
 		txtTwitterPIN.setDisable(true);
 		twitterPINButton.setDisable(true);
@@ -598,6 +587,7 @@ public class PlayConfigurationView implements Initializable {
 			e.printStackTrace();
 		}
 		courseController.commit();
+		tableController.commit();
 	}
 
 	public void commitPlayer() {
@@ -634,17 +624,7 @@ public class PlayConfigurationView implements Initializable {
 		player.setShowjudgearea(judgeregion.isSelected());
 		player.setTarget(target.getValue());
 
-		// TODO 複数IR編集への対応
-		if(player.getIrconfig().length == 0) {
-			IRConfig[] irs = new IRConfig[1];
-			irs[0] = new IRConfig();			
-			player.setIrconfig(irs);
-		}
-		IRConfig pir = player.getIrconfig()[0];
-		pir.setIrname(irname.getValue());
-		pir.setUserid(iruserid.getText());
-		pir.setPassword(irpassword.getText());
-		pir.setIrsend(irsend.getValue());
+		irController.commit();
 
 		updateInputConfig();
 		updatePlayConfig();
@@ -829,7 +809,7 @@ public class PlayConfigurationView implements Initializable {
 
     @FXML
 	public void updateInputConfig() {
-    	// TODO 各デバイス毎の最小入力感覚設定
+    	// TODO 各デバイス毎の最小入力間隔設定
 		if (ic != null) {
 			PlayModeConfig conf = player.getPlayConfig(Mode.valueOf(ic.name()));
 			conf.getKeyboardConfig().setDuration(getValue(inputduration));
@@ -838,6 +818,7 @@ public class PlayConfigurationView implements Initializable {
 				controller.setJKOC(jkoc_hack.isSelected());
 		        controller.setAnalogScratch(analogScratch.isSelected());
 		        controller.setAnalogScratchThreshold(analogScratchThreshold.getValue());
+		        controller.setAnalogScratchMode(analogScratchMode.getValue());
 			}
 		}
 		ic = inputconfig.getValue();
@@ -847,6 +828,7 @@ public class PlayConfigurationView implements Initializable {
 			inputduration.getValueFactory().setValue(controller.getDuration());
 	        jkoc_hack.setSelected(controller.getJKOC());
 	        analogScratch.setSelected(controller.isAnalogScratch());
+	        analogScratchMode.getSelectionModel().select(controller.getAnalogScratchMode());
 	        analogScratchThreshold.getValueFactory().setValue(controller.getAnalogScratchThreshold());
 		}
 	}
@@ -920,22 +902,6 @@ public class PlayConfigurationView implements Initializable {
 		loadBMS(null, false);
 	}
 
-	@FXML
-	public void updateIRConnection() {
-    	String homeurl = IRConnectionManager.getHomeURL(irname.getValue());
-		irhome.setText(homeurl);
-		irhome.setOnAction((event) -> {
-            Desktop desktop = Desktop.getDesktop();
-            URI uri;
-            try {
-                uri = new URI(homeurl);
-                desktop.browse(uri);
-            } catch (Exception e) {
-                Logger.getGlobal().warning("最新版URLアクセス時例外:" + e.getMessage());
-            }
-        });
-	}
-
 	public void loadBMSPath(String updatepath){
     	loadBMS(updatepath, false);
 	}
@@ -972,11 +938,15 @@ public class PlayConfigurationView implements Initializable {
 		}
 
 		try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get(config.getTablepath()))) {
-			for (Path p : paths) {
-				Files.deleteIfExists(p);
-			}
+			paths.forEach((p) -> {
+				if(p.toString().toLowerCase().endsWith(".bmt")) {
+					try {
+						Files.deleteIfExists(p);
+					} catch (IOException e) {
+					}					
+				}
+			});
 		} catch (IOException e) {
-
 		}
 
 		TableDataAccessor tda = new TableDataAccessor(config.getTablepath());
@@ -1093,7 +1063,7 @@ public class PlayConfigurationView implements Initializable {
 		System.exit(0);
 	}
 
-	class OptionListCell extends ListCell<Integer> {
+	static class OptionListCell extends ListCell<Integer> {
 
 		private final String[] strings;
 
