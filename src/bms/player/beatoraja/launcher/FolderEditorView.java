@@ -1,23 +1,17 @@
 package bms.player.beatoraja.launcher;
 
 import java.net.URL;
-import java.util.ArrayList;
-import java.util.List;
+import java.nio.file.Path;
 import java.util.ResourceBundle;
 
-import bms.player.beatoraja.Config;
 import bms.player.beatoraja.CourseData;
-import bms.player.beatoraja.CourseDataAccessor;
-import bms.player.beatoraja.TableData;
 import bms.player.beatoraja.TableData.TableFolder;
-import bms.player.beatoraja.TableDataAccessor;
-
-import static bms.player.beatoraja.CourseData.CourseDataConstraint.*;
 import bms.player.beatoraja.song.*;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.TextFieldListCell;
+import javafx.scene.layout.GridPane;
 
 public class FolderEditorView implements Initializable {
 
@@ -25,29 +19,32 @@ public class FolderEditorView implements Initializable {
 	private TextField search;
 	@FXML
 	private TableView<SongData> searchSongs;
+	@FXML
+	private SongDataView searchSongsController;
 
 	@FXML
-	private TextField tableName;
-	@FXML
 	private ListView<TableFolder> folders;
+	@FXML
+	private GridPane folderPane;	
 	@FXML
 	private TextField folderName;
 	@FXML
 	private TableView<SongData> folderSongs;
+	@FXML
+	private SongDataView folderSongsController;
 
-	private String filename;
+	private Path filepath;
 	
 	private TableFolder selectedFolder;
 	
 	private SongDatabaseAccessor songdb;
 	
-	private TableDataAccessor tableAccessor;
 	private CourseData[] courses;
 	
 	public void initialize(URL arg0, ResourceBundle arg1) {		
 		folders.getSelectionModel().selectedIndexProperty().addListener((observable, oldVal, newVal) -> {
 			if(oldVal != newVal) {
-				updateCourseData();				
+				updateTableFolder();				
 			}
 		});
 		folders.setCellFactory((ListView) -> {
@@ -59,11 +56,14 @@ public class FolderEditorView implements Initializable {
 				}
 			};
 		});
+		folderSongsController.setVisible("fullTitle", "sha256");
+		searchSongsController.setVisible("fullTitle", "fullArtist", "mode", "level", "notes", "sha256");
+		
+		updateFolder(null);
 	}
 	
-	protected void init(Config config, SongDatabaseAccessor songdb) {
+	protected void init(SongDatabaseAccessor songdb) {
 		this.songdb = songdb;
-		tableAccessor = new TableDataAccessor(config.getTablepath());
 	}
 
 	public void searchSongs() {
@@ -75,28 +75,7 @@ public class FolderEditorView implements Initializable {
 		}
 	}
 
-	public void update(String name) {
-		TableData td = tableAccessor.read(name);
-		if(td == null) {
-			td = new TableData();
-			td.setName("New Table");
-		}
-		courses = td.getCourse();
-		folders.getItems().setAll(td.getFolder());
-		tableName.setText(td.getName());
-		filename = name;
-	}
-	
-	public void commit() {
-		commitFolder();
-		TableData td = new TableData();
-		td.setName(tableName.getText());
-		td.setCourse(courses);
-		td.setFolder(folders.getItems().toArray(new TableFolder[folders.getItems().size()]));
-		tableAccessor.write(td, filename);
-	}
-	
-	public void updateCourseData() {
+	public void updateTableFolder() {
 		commitFolder();
 		updateFolder(folders.getSelectionModel().getSelectedItem());
 	}
@@ -105,17 +84,17 @@ public class FolderEditorView implements Initializable {
 		if(selectedFolder == null) {
 			return;
 		}
-		final int index = folders.getItems().indexOf(selectedFolder);
-		
-		selectedFolder = new TableFolder();
-		selectedFolder.setName(folderName.getText());
-		
+		selectedFolder.setName(folderName.getText());		
 		selectedFolder.setSong(folderSongs.getItems().toArray(new SongData[folderSongs.getItems().size()]));		
-		folders.getItems().set(index, selectedFolder);
 	}
 
 	private void updateFolder(TableFolder course) {
 		selectedFolder = course;
+		if(selectedFolder == null) {
+			folderPane.setVisible(false);
+			return;
+		}
+		folderPane.setVisible(true);
 		
 		folderName.setText(selectedFolder.getName());
 		folderSongs.getItems().setAll(course.getSong());
@@ -123,10 +102,37 @@ public class FolderEditorView implements Initializable {
 	
 	public void addTableFolder() {
 		TableFolder course = new TableFolder();
-		course.setName("New Course");
+		course.setName("New Folder");
 		folders.getItems().add(course);
 	}
 
+	public void removeTableFolder() {
+		TableFolder song = folders.getSelectionModel().getSelectedItem();
+		if(song != null) {
+			folders.getItems().remove(song);
+		}
+	}
+ 
+	public void moveTableFolderUp() {
+		final int index = folders.getSelectionModel().getSelectedIndex();
+		if(index > 0) {
+			TableFolder song = folders.getSelectionModel().getSelectedItem();
+			folders.getItems().remove(index);
+			folders.getItems().add(index - 1, song);
+			folders.getSelectionModel().select(index - 1);
+		}
+	}
+
+	public void moveTableFolderDown() {
+		final int index = folders.getSelectionModel().getSelectedIndex();
+		if(index >= 0 && index < folders.getItems().size() - 1) {
+			TableFolder song = folders.getSelectionModel().getSelectedItem();
+			folders.getItems().remove(index);
+			folders.getItems().add(index + 1, song);
+			folders.getSelectionModel().select(index + 1);
+		}
+	}
+	
 	public void addSongData() {
 		SongData song = searchSongs.getSelectionModel().getSelectedItem();
 		if(song != null) {
@@ -147,6 +153,7 @@ public class FolderEditorView implements Initializable {
 			SongData song = folderSongs.getSelectionModel().getSelectedItem();
 			folderSongs.getItems().remove(index);
 			folderSongs.getItems().add(index - 1, song);
+			folderSongs.getSelectionModel().select(index - 1);
 		}
 	}
 
@@ -156,10 +163,16 @@ public class FolderEditorView implements Initializable {
 			SongData song = folderSongs.getSelectionModel().getSelectedItem();
 			folderSongs.getItems().remove(index);
 			folderSongs.getItems().add(index + 1, song);
+			folderSongs.getSelectionModel().select(index + 1);
 		}
 	}
 	
 	public TableFolder[] getTableFolder() {
+		commitFolder();
 		return folders.getItems().toArray(new TableFolder[folders.getItems().size()]);
+	}
+	
+	public void setTableFolder(TableFolder[] folder) {
+		folders.getItems().setAll(folder);
 	}
 }

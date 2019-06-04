@@ -100,6 +100,7 @@ public class BGAProcessor {
 		progress = 0;
 
 		cache.clear();
+		resetCurrentlyPlayingBGA();
 
 		int id = 0;
 
@@ -219,11 +220,15 @@ public class BGAProcessor {
 				mp.stop();				
 			}
 		}
+		resetCurrentlyPlayingBGA();
+		time = 0;		
+	}
+
+	private void resetCurrentlyPlayingBGA() {
 		playingbgaid = -1;
 		playinglayerid = -1;
 		misslayertime = 0;
 		misslayer = null;
-		time = 0;		
 	}
 
 	private Texture getBGAData(long time, int id, boolean cont) {
@@ -245,8 +250,6 @@ public class BGAProcessor {
 			this.time = -1;
 			return;
 		}
-		rbga = true;
-		rlayer = true;
 		for (int i = pos; i < timelines.length; i++) {
 			final TimeLine tl = timelines[i];
 			if (tl.getTime() > time) {
@@ -310,6 +313,7 @@ public class BGAProcessor {
 		} else {
 			// draw BGA
 			final Texture playingbgatex = getBGAData(time, playingbgaid, rbga);
+			rbga = true;
 			if (playingbgatex != null) {
 				if (movies[playingbgaid] != null) {
 					sprite.setType(SkinObjectRenderer.TYPE_FFMPEG);
@@ -323,6 +327,7 @@ public class BGAProcessor {
 			}
 			// draw layer
 			final Texture playinglayertex = getBGAData(time, playinglayerid, rlayer);
+			rlayer = true;
 			if (playinglayertex != null) {
 				if (movies[playinglayerid] != null) {
 					sprite.setType(SkinObjectRenderer.TYPE_FFMPEG);

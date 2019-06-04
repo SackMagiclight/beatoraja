@@ -86,7 +86,6 @@ public class SkinBar extends SkinObject {
     public static final int BARLAMP_COUNT = 11;
     
     private MusicSelector selector;
-    private long time;
 
     public SkinBar(int position) {
         this.position = position;
@@ -190,6 +189,15 @@ public class SkinBar extends SkinObject {
         }
     }
 
+    public boolean validate() {
+    	for(int i = 0;i < text.length;i++) {
+    		if(text[i] != null && !text[i].validate()) {
+    			text[i] = null;
+    		}
+    	}
+    	return super.validate();
+    }
+    
     @Override
     public void prepare(long time, MainState state) {
     	if(selector == null) {
@@ -199,7 +207,6 @@ public class SkinBar extends SkinObject {
     			return;
     		}
     	}
-    	this.time = time;
     	super.prepare(time, state);
     	for(SkinImage bar : barimageon) {
     		if(bar != null) {
@@ -256,7 +263,7 @@ public class SkinBar extends SkinObject {
     }
 
     public void draw(SkinObjectRenderer sprite) {
-        selector.getBarRender().render(sprite, (MusicSelectSkin) selector.getSkin(), this, time);
+        selector.getBarRender().render(sprite, (MusicSelectSkin) selector.getSkin(), this);
     }
 
     @Override

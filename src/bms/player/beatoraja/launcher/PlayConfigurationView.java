@@ -19,14 +19,10 @@ import com.badlogic.gdx.utils.Json;
 import com.badlogic.gdx.utils.JsonWriter.OutputType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.portaudio.DeviceInfo;
 
 import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.PlayModeConfig.ControllerConfig;
-import bms.player.beatoraja.PlayerConfig.IRConfig;
-import bms.player.beatoraja.audio.PortAudioDriver;
-import bms.player.beatoraja.ir.*;
 import bms.player.beatoraja.play.JudgeAlgorithm;
 import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.song.*;
@@ -36,9 +32,6 @@ import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
-import javafx.scene.input.DragEvent;
-import javafx.scene.input.Dragboard;
-import javafx.scene.input.TransferMode;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -122,15 +115,6 @@ public class PlayConfigurationView implements Initializable {
 	private Spinner<Integer> scrolldurationhigh;
 
 	@FXML
-	private ListView<String> bmsroot;
-	@FXML
-	private TextField url;
-	@FXML
-	private ListView<String> tableurl;
-	@FXML
-	private CheckBox updatesong;
-
-	@FXML
 	private ComboBox<Integer> scoreop;
 	@FXML
 	private ComboBox<Integer> scoreop2;
@@ -201,24 +185,6 @@ public class PlayConfigurationView implements Initializable {
 	private ComboBox<Integer> target;
 
 	@FXML
-	private ComboBox<Integer> audio;
-	@FXML
-	private ComboBox<String> audioname;
-	@FXML
-	private Spinner<Integer> audiobuffer;
-	@FXML
-	private Spinner<Integer> audiosim;
-	@FXML
-	private Slider systemvolume;
-	@FXML
-	private Slider keyvolume;
-	@FXML
-	private Slider bgvolume;
-	@FXML
-	private ComboBox<Integer> audioFreqOption;
-	@FXML
-	private ComboBox<Integer> audioFastForward;
-	@FXML
 	private ComboBox<Integer> judgealgorithm;
 
     @FXML
@@ -267,13 +233,15 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private VideoConfigurationView videoController;
 	@FXML
+	private AudioConfigurationView audioController;
+	@FXML
+	private ResourceConfigurationView resourceController;
+	@FXML
 	private SkinConfigurationView skinController;
 	@FXML
 	private IRConfigurationView irController;
 	@FXML
-	private CourseEditorView courseController;
-	@FXML
-	private FolderEditorView tableController;
+	private TableEditorView tableController;
 
 	private Config config;
 	private PlayerConfig player;
@@ -333,12 +301,8 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(autosavereplay2, autosaves);
 		initComboBox(autosavereplay3, autosaves);
 		initComboBox(autosavereplay4, autosaves);
-		initComboBox(audio, new String[] { "OpenAL (LibGDX Sound)", "OpenAL (LibGDX AudioDevice)", "PortAudio"});
-		audio.getItems().setAll(0, 2);
-
-		String[] audioPlaySpeedControls = new String[] { "UNPROCESSED", "FREQUENCY" };
-		initComboBox(audioFreqOption, audioPlaySpeedControls);
-		initComboBox(audioFastForward, audioPlaySpeedControls);
+		
+		resourceController.init(this);
 
 		newVersionCheck();
 		Logger.getGlobal().info("初期化時間(ms) : " + (System.currentTimeMillis() - t));
@@ -399,23 +363,13 @@ public class PlayConfigurationView implements Initializable {
 
 		players.getItems().setAll(PlayerConfig.readAllPlayerID(config.getPlayerpath()));
 		videoController.update(config);
-
-		systemvolume.setValue((double)config.getSystemvolume());
-		keyvolume.setValue((double)config.getKeyvolume());
-		bgvolume.setValue((double)config.getBgvolume());
+		audioController.update(config);
 
 		bgmpath.setText(config.getBgmpath());
 		soundpath.setText(config.getSoundpath());
 
-		bmsroot.getItems().setAll(config.getBmsroot());
-		updatesong.setSelected(config.isUpdatesong());
-		tableurl.getItems().setAll(config.getTableURL());
+		resourceController.update(config);
 
-		audio.setValue(config.getAudioDriver());
-		audiobuffer.getValueFactory().setValue(config.getAudioDeviceBufferSize());
-		audiosim.getValueFactory().setValue(config.getAudioDeviceSimultaneousSources());
-		audioFreqOption.setValue(config.getAudioFreqOption());
-		audioFastForward.setValue(config.getAudioFastForward());
 		showhiddennote.setSelected(config.isShowhiddennote());
 
 		judgealgorithm.setValue(JudgeAlgorithm.getIndex(config.getJudgeType()));
@@ -439,8 +393,6 @@ public class PlayConfigurationView implements Initializable {
 		enableIpfs.setSelected(config.isEnableIpfs());
 		ipfsurl.setText(config.getIpfsUrl());
 
-		updateAudioDriver();
-
 		if(players.getItems().contains(config.getPlayername())) {
 			players.setValue(config.getPlayername());
 		} else {
@@ -452,10 +404,8 @@ public class PlayConfigurationView implements Initializable {
 			Class.forName("org.sqlite.JDBC");
 			SongDatabaseAccessor songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(),
 					config.getBmsroot());
-			courseController.setSongDatabaseAccessor(songdb);
-			courseController.update("default");
-			tableController.init(config, songdb);
-			tableController.update("default.json");
+			tableController.init(songdb);
+			tableController.update(Paths.get(config.getTablepath() + "/" + "default.json"));
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
@@ -538,27 +488,16 @@ public class PlayConfigurationView implements Initializable {
 	 */
 	public void commit() {
 	    videoController.commit(config);
+		audioController.commit();
 
 		config.setPlayername(players.getValue());
 
 		config.setBgmpath(bgmpath.getText());
 		config.setSoundpath(soundpath.getText());
-		config.setSystemvolume((float) systemvolume.getValue());
-		config.setKeyvolume((float) keyvolume.getValue());
-		config.setBgvolume((float) bgvolume.getValue());
 
-		config.setBmsroot(bmsroot.getItems().toArray(new String[0]));
-		config.setUpdatesong(updatesong.isSelected());
-		config.setTableURL(tableurl.getItems().toArray(new String[0]));
+		resourceController.commit(config);
 
 		config.setShowhiddennote(showhiddennote.isSelected());
-
-		config.setAudioDriver(audio.getValue());
-		config.setAudioDriverName(audioname.getValue());
-		config.setAudioDeviceBufferSize(getValue(audiobuffer));
-		config.setAudioDeviceSimultaneousSources(getValue(audiosim));
-		config.setAudioFreqOption(audioFreqOption.getValue());
-		config.setAudioFastForward(audioFastForward.getValue());
 
 		config.setJudgeType(JudgeAlgorithm.values()[judgealgorithm.getValue()].name());
 		config.setAutoSaveReplay( new int[]{autosavereplay1.getValue(),autosavereplay2.getValue(),
@@ -586,7 +525,6 @@ public class PlayConfigurationView implements Initializable {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-		courseController.commit();
 		tableController.commit();
 	}
 
@@ -634,67 +572,6 @@ public class PlayConfigurationView implements Initializable {
 	}
 
     @FXML
-	public void addSongPath() {
-		DirectoryChooser chooser = new DirectoryChooser();
-		chooser.setTitle("楽曲のルートフォルダを選択してください");
-		File f = chooser.showDialog(null);
-		if (f != null) {
-			final String defaultPath = new File(".").getAbsoluteFile().getParent() + File.separatorChar;;
-			String targetPath = f.getAbsolutePath();
-			if(targetPath.startsWith(defaultPath)) {
-				targetPath = f.getAbsolutePath().substring(defaultPath.length());
-			}
-			boolean unique = true;
-			for (String path : bmsroot.getItems()) {
-				if (path.equals(targetPath) || targetPath.startsWith(path + File.separatorChar)) {
-					unique = false;
-					break;
-				}
-			}
-			if (unique) {
-				bmsroot.getItems().add(targetPath);
-				loadBMSPath(targetPath);
-			}
-		}
-	}
-
-    @FXML
-	public void onSongPathDragOver(DragEvent ev) {
-		Dragboard db = ev.getDragboard();
-		if (db.hasFiles()) {
-			ev.acceptTransferModes(TransferMode.COPY_OR_MOVE);
-		}
-		ev.consume();
-	}
-
-    @FXML
-	public void songPathDragDropped(final DragEvent ev) {
-		Dragboard db = ev.getDragboard();
-		if (db.hasFiles()) {
-			for (File f : db.getFiles()) {
-				if (f.isDirectory()) {
-					final String defaultPath = new File(".").getAbsoluteFile().getParent() + File.separatorChar;;
-					String targetPath = f.getAbsolutePath();
-					if(targetPath.startsWith(defaultPath)) {
-						targetPath = f.getAbsolutePath().substring(defaultPath.length());
-					}
-					boolean unique = true;
-					for (String path : bmsroot.getItems()) {
-						if (path.equals(targetPath) || targetPath.startsWith(path + File.separatorChar)) {
-							unique = false;
-							break;
-						}
-					}
-					if (unique) {
-						bmsroot.getItems().add(targetPath);
-						loadBMSPath(targetPath);
-					}
-				}
-			}
-		}
-	}
-
-    @FXML
 	public void addBGMPath() {
     	String s = showDirectoryChooser("BGMのルートフォルダを選択してください");
     	if(s != null) {
@@ -723,50 +600,6 @@ public class PlayConfigurationView implements Initializable {
 		File f = chooser.showDialog(null);
 		return f != null ? f.getPath() : null;
     }
-
-    @FXML
-	public void removeSongPath() {
-		bmsroot.getItems().removeAll(bmsroot.getSelectionModel().getSelectedItems());
-	}
-
-    @FXML
-	public void addTableURL() {
-		String s = url.getText();
-		if (s.startsWith("http") && !tableurl.getItems().contains(s)) {
-			tableurl.getItems().add(url.getText());
-		}
-	}
-
-    @FXML
-	public void removeTableURL() {
-		tableurl.getItems().removeAll(tableurl.getSelectionModel().getSelectedItems());
-	}
-
-	public void moveTableURLUp() {
-		final int index = tableurl.getSelectionModel().getSelectedIndex();
-		if(index > 0) {
-			String table = tableurl.getSelectionModel().getSelectedItem();
-			tableurl.getItems().remove(index);
-			tableurl.getItems().add(index - 1, table);
-
-			SelectionModel m = tableurl.getSelectionModel();
-			m.select(index - 1);
-			tableurl.setSelectionModel((MultipleSelectionModel)m);
-		}
-	}
-
-	public void moveTableURLDown() {
-		final int index = tableurl.getSelectionModel().getSelectedIndex();
-		if(index >= 0 && index < tableurl.getItems().size() - 1) {
-			String table = tableurl.getSelectionModel().getSelectedItem();
-			tableurl.getItems().remove(index);
-			tableurl.getItems().add(index + 1, table);
-
-			SelectionModel m = tableurl.getSelectionModel();
-			m.select(index + 1);
-			tableurl.setSelectionModel((MultipleSelectionModel)m);
-		}
-	}
 
 	private PlayMode pc = null;
 
@@ -837,43 +670,6 @@ public class PlayConfigurationView implements Initializable {
 		spinner.getValueFactory()
 				.setValue(spinner.getValueFactory().getConverter().fromString(spinner.getEditor().getText()));
 		return spinner.getValue();
-	}
-
-    @FXML
-	public void updateAudioDriver() {
-		switch(audio.getValue()) {
-		case Config.AUDIODRIVER_SOUND:
-			audioname.setDisable(true);
-			audioname.getItems().clear();
-			audiobuffer.setDisable(false);
-			audiosim.setDisable(false);
-			break;
-		case Config.AUDIODRIVER_PORTAUDIO:
-			try {
-				DeviceInfo[] devices = PortAudioDriver.getDevices();
-				List<String> drivers = new ArrayList<String>(devices.length);
-				for(int i = 0;i < devices.length;i++) {
-					drivers.add(devices[i].name);
-				}
-				if(drivers.size() == 0) {
-					throw new RuntimeException("ドライバが見つかりません");
-				}
-				audioname.getItems().setAll(drivers);
-				if(drivers.contains(config.getAudioDriverName())) {
-					audioname.setValue(config.getAudioDriverName());
-				} else {
-					audioname.setValue(drivers.get(0));
-				}
-				audioname.setDisable(false);
-				audiobuffer.setDisable(false);
-				audiosim.setDisable(false);
-//				PortAudio.terminate();
-			} catch(Throwable e) {
-				Logger.getGlobal().severe("PortAudioは選択できません : " + e.getMessage());
-				audio.setValue(Config.AUDIODRIVER_SOUND);
-			}
-			break;
-		}
 	}
 
     @FXML

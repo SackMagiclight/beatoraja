@@ -12,6 +12,7 @@ import bms.player.beatoraja.select.bar.*;
 import bms.player.beatoraja.skin.*;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 
+import com.badlogic.gdx.graphics.Color;
 import com.badlogic.gdx.math.Rectangle;
 import com.badlogic.gdx.utils.*;
 
@@ -340,7 +341,10 @@ public class BarRenderer {
 		return false;
 	}
 
+	private long time;
+	
 	public void prepare(MusicSelectSkin skin, SkinBar baro, long time) {
+		this.time = time;		
 		for (int i = 0; i < barlength; i++) {
 			// calcurate song bar position
 			final BarArea ba = bararea[i];
@@ -423,7 +427,7 @@ public class BarRenderer {
 		}
 	}
 
-	public void render(SkinObjectRenderer sprite, MusicSelectSkin skin, SkinBar baro, long time) {
+	public void render(SkinObjectRenderer sprite, MusicSelectSkin skin, SkinBar baro) {
 		if (skin == null) {
 			return;
 		}
@@ -443,8 +447,12 @@ public class BarRenderer {
 			for (char c : charset) {
 				chars[i++] = c;
 			}
-			baro.getText(0).prepareFont(String.valueOf(chars));
-			baro.getText(1).prepareFont(String.valueOf(chars));
+			if(baro.getText(0) != null) {
+				baro.getText(0).prepareFont(String.valueOf(chars));				
+			}
+			if(baro.getText(1) != null) {
+				baro.getText(1).prepareFont(String.valueOf(chars));				
+			}
 		}
 
 		// check terminated loader thread and load song images
@@ -463,7 +471,11 @@ public class BarRenderer {
 			}
 
 			if (si.draw) {
+				float orgx = si.region.x;
+				float orgy = si.region.y;
 				si.draw(sprite, time, select, ba.value, ba.x - si.region.x, ba.y - si.region.y - (baro.getPosition() == 1 ? si.region.height : 0));
+				si.region.x = orgx;
+				si.region.y = orgy;
 			} else {
 				ba.value = -1;
 			}
@@ -488,8 +500,11 @@ public class BarRenderer {
 			if(ba.value == -1) {
 				continue;
 			}
-			baro.getText(ba.text).setText(ba.sd.getTitle());
-			baro.getText(ba.text).draw(sprite, ba.x, ba.y);
+			SkinText text = baro.getText(ba.text);
+			if(text != null) {
+				text.setText(ba.sd.getTitle());
+				text.draw(sprite, ba.x, ba.y);				
+			}
 		}
 
 		for (int i = 0; i < barlength; i++) {
@@ -671,7 +686,9 @@ public class BarRenderer {
 					for(SongData song : songs) {
 						song.setFavorite(enable ? song.getFavorite() | SongData.FAVORITE_SONG : song.getFavorite() & (0xffffffff ^ SongData.FAVORITE_SONG));
 					}
+					sd.setFavorite(enable ? sd.getFavorite() | SongData.FAVORITE_SONG : sd.getFavorite() & (0xffffffff ^ SongData.FAVORITE_SONG));
 					select.getSongDatabase().setSongDatas(songs);
+					select.main.getMessageRenderer().addMessage(enable ? "Added to Favorite Song" : "Removed from Favorite Song", 1200, Color.GREEN, 1);
 				}
 			}
 		}
@@ -680,8 +697,10 @@ public class BarRenderer {
 				SongData sd = ((SongBar) getSelected()).getSongData();
 
 				if(sd != null) {
+					boolean enable = ((sd.getFavorite() & SongData.FAVORITE_CHART) == 0);
 					sd.setFavorite(sd.getFavorite() ^ SongData.FAVORITE_CHART);
 					select.getSongDatabase().setSongDatas(new SongData[]{sd});
+					select.main.getMessageRenderer().addMessage(enable ? "Added to Favorite Chart" : "Removed from Favorite Chart", 1200, Color.GREEN, 1);
 //					boolean exist = false;
 //					for(TableData.TableSongData element : favorites[0].getElements()) {
 //						if(element.getHash().equals(sd.getSha256())) {
@@ -772,11 +791,8 @@ public class BarRenderer {
 				dir.addLast((DirectoryBar) bar);
 			}
 
-			// 変更前と同じバーがあればカーソル位置を保持する
-			currentsongs = l.toArray(Bar.class);
-			bartextupdate = true;
-
-			for (Bar b : currentsongs) {
+			Bar[] newcurrentsongs = l.toArray(Bar.class);
+			for (Bar b : newcurrentsongs) {
 				if (b instanceof SongBar) {
 					SongData sd = ((SongBar) b).getSongData();
 					if (sd != null && select.getScoreDataCache().existsScoreDataCache(sd, config.getLnmode())) {
@@ -784,11 +800,14 @@ public class BarRenderer {
 					}
 				}
 			}
+			Sort.instance().sort(newcurrentsongs, BarSorter.values()[select.getSort()]);
 
-			Sort.instance().sort(currentsongs, BarSorter.values()[select.getSort()]);
+			currentsongs = newcurrentsongs;
+			bartextupdate = true;
 
 			selectedindex = 0;
 
+			// 変更前と同じバーがあればカーソル位置を保持する
 			if (prevbar != null) {
 				if (prevbar instanceof SongBar && ((SongBar) prevbar).existsSong()) {
 					final SongBar prevsong = (SongBar) prevbar;

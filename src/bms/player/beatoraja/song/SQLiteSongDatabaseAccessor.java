@@ -50,7 +50,7 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 		qr = new QueryRunner(ds);
 		root = Paths.get(".");
 		this.bmsroot = bmsroot;
-		createTable();		
+		createTable();
 	}
 
 	/**
@@ -273,8 +273,6 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 	 */
 	class SongDatabaseUpdater {
 
-		private AtomicInteger count = new AtomicInteger();;
-
 		private final boolean updateAll;
 
 		private SongInformationAccessor info;
@@ -293,7 +291,7 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 		public void updateSongDatas(Path[] paths) {
 			long time = System.currentTimeMillis();
 			SongDatabaseUpdaterProperty property = new SongDatabaseUpdaterProperty(Calendar.getInstance().getTimeInMillis() / 1000, updateAll, info);
-			count.set(0);
+			property.count.set(0);
 			if(info != null) {
 				info.startUpdate();
 			}
@@ -344,7 +342,7 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 			}
 			long nowtime = System.currentTimeMillis();
 			Logger.getGlobal().info("楽曲更新完了 : Time - " + (nowtime - time) + " 1曲あたりの時間 - "
-					+ (count.get() > 0 ? (nowtime - time) / count.get() : "不明"));
+					+ (property.count.get() > 0 ? (nowtime - time) / property.count.get() : "不明"));
 		}
 
 	}
@@ -417,7 +415,7 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 			}
 			
 			if(!containsBMS) {
-				dirs.parallelStream().forEach((bf) -> {
+				dirs.forEach((bf) -> {
 					try {
 						bf.processDirectory(property);
 					} catch (IOException | SQLException e) {
@@ -431,13 +429,17 @@ public class SQLiteSongDatabaseAccessor implements SongDatabaseAccessor {
 				final String s = (path.startsWith(root) ? root.relativize(path).toString() : path.toString())
 						+ File.separatorChar;
 				// System.out.println("folder更新 : " + s);
+				Path parentpath = path.getParent();
+				if(parentpath == null) {
+					parentpath = path.toAbsolutePath().getParent();
+				}				
 				qr.update(property.conn,
 						"INSERT OR REPLACE INTO folder (title, subtitle, command, path, type, banner, parent, date, max, adddate)"
 								+ "VALUES(?,?,?,?,?,?,?,?,?,?);",
 								path.getFileName().toString(), "", "", s, 1, "",
-						SongUtils.crc32(path.toAbsolutePath().getParent().toString(), bmsroot, root.toString()),
+						SongUtils.crc32(parentpath.toString() , bmsroot, root.toString()),
 						Files.getLastModifiedTime(path).toMillis() / 1000, null,
-						Calendar.getInstance().getTimeInMillis() / 1000);
+						property.updatetime);
 			}
 			// ディレクトリ内に存在しないフォルダレコードを削除
 			for (FolderData record : folders) {
