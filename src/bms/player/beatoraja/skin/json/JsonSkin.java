@@ -167,6 +167,7 @@ public class JsonSkin {
 		public int angle;
 		public int range;
 		public int type;
+		public boolean changeable = true;
 		public FloatProperty value;
 		public FloatWriter event;
 		public boolean isRefNum = false;
@@ -195,6 +196,7 @@ public class JsonSkin {
 
 	public static class GaugeGraph {
 		 public String id;
+		 public String[] color;
 		 public String assistClearBGColor = "440044";
 		 public String assistAndEasyFailBGColor = "004444";
 		 public String grooveFailBGColor = "004400";
