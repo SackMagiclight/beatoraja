@@ -3,6 +3,7 @@ package bms.player.beatoraja.select;
 import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import java.nio.file.DirectoryStream;
+import java.io.File;
 import java.nio.file.*;
 import java.util.logging.Logger;
 
@@ -13,8 +14,8 @@ import com.badlogic.gdx.utils.ObjectMap.Keys;
 import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.PlayerResource.PlayMode;
-import bms.player.beatoraja.ScoreDatabaseAccessor;
 import bms.player.beatoraja.ScoreDatabaseAccessor.ScoreDataCollector;
+import bms.player.beatoraja.external.ScoreDataImporter;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.input.KeyCommand;
 import bms.player.beatoraja.ir.IRResponse;
@@ -114,9 +115,27 @@ public class MusicSelector extends MainState {
 		};
 
 		if(main.getIRStatus().length > 0) {
+			if(main.getIRStatus()[0].config.isImportscore()) {
+				main.getIRStatus()[0].config.setImportscore(false);
+				try {
+					IRResponse<IRScoreData[]> scores = main.getIRStatus()[0].connection.getPlayData(null, null);
+					if(scores.isSucceeded()) {
+						ScoreDataImporter scoreimport = new ScoreDataImporter(new ScoreDatabaseAccessor(main.getConfig().getPlayerpath() + File.separatorChar + main.getConfig().getPlayername() + File.separatorChar + "score.db"));
+						scoreimport.importScores(scores.getData(), main.getIRStatus()[0].config.getIrname());
+
+						Logger.getGlobal().info("IRからのスコアインポート完了");
+					} else {
+						Logger.getGlobal().warning("IRからのスコアインポート失敗 : " + scores.getMessage());
+					}					
+				} catch (Throwable e) {
+					e.printStackTrace();
+				}
+			}
+			
 			IRResponse<PlayerInformation[]> response = main.getIRStatus()[0].connection.getRivals();
 			if(response.isSucceeded()) {
 				try {
+					
 					// ライバルスコアデータベース作成
 					// TODO 別のクラスに移動
 					if(!Files.exists(Paths.get("rival"))) {
@@ -124,8 +143,47 @@ public class MusicSelector extends MainState {
 					}
 
 					// ライバルキャッシュ作成
+					if(main.getIRStatus()[0].config.isImportrival()) {
+						for(PlayerInformation rival : response.getData()) {
+							final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor("rival/" + main.getIRStatus()[0].config.getIrname() + rival.getId() + ".db");
+							rivalcaches.put(rival,  new ScoreDataCache() {
+
+								@Override
+								protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
+									return scoredb.getScoreData(song.getSha256(), song.hasUndefinedLongNote() ? lnmode : 0);
+								}
+
+								protected void readScoreDatasFromSource(ScoreDataCollector collector, SongData[] songs, int lnmode) {
+									scoredb.getScoreDatas(collector,songs, lnmode);
+								}
+							});
+							new Thread(() -> {
+								scoredb.createTable();
+								scoredb.setInformation(rival);
+								IRResponse<IRScoreData[]> scores = main.getIRStatus()[0].connection.getPlayData(rival.getId(), null);
+								if(scores.isSucceeded()) {
+									scoredb.setScoreData(scores.getData());
+									Logger.getGlobal().info("IRからのライバルスコア取得完了 : " + rival.getName());
+								} else {
+									Logger.getGlobal().warning("IRからのライバルスコア取得失敗 : " + scores.getMessage());
+								}
+							}).start();
+						}						
+					}
+					
 					try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get("rival"))) {
 						for (Path p : paths) {
+							boolean exists = false;
+							for(PlayerInformation info : rivalcaches.keys()) {
+								if(p.getFileName().toString().equals(main.getIRStatus()[0].config.getIrname() + info.getId() + ".db")) {
+									exists = true;
+									break;
+								}
+							}
+							if(exists) {
+								continue;
+							}
+							
 							if(p.toString().endsWith(".db")) {
 								final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor(p.toString());
 								PlayerInformation info = scoredb.getInformation();
@@ -141,37 +199,12 @@ public class MusicSelector extends MainState {
 											scoredb.getScoreDatas(collector,songs, lnmode);
 										}
 									});
+									Logger.getGlobal().info("ローカルに保存されているライバルスコア取得完了 : " + info.getName());
 								}
 							}
 						}
 					} catch (Throwable e) {
 						e.printStackTrace();
-					}
-
-					for(PlayerInformation rival : response.getData()) {
-						final ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor("rival/" + config.getIrname() + rival.getId() + ".db");
-						rivalcaches.put(rival,  new ScoreDataCache() {
-
-							@Override
-							protected IRScoreData readScoreDatasFromSource(SongData song, int lnmode) {
-								return scoredb.getScoreData(song.getSha256(), song.hasUndefinedLongNote() ? lnmode : 0);
-							}
-
-							protected void readScoreDatasFromSource(ScoreDataCollector collector, SongData[] songs, int lnmode) {
-								scoredb.getScoreDatas(collector,songs, lnmode);
-							}
-						});
-						new Thread(() -> {
-							scoredb.createTable();
-							scoredb.setInformation(rival);
-							IRResponse<IRScoreData[]> scores = main.getIRStatus()[0].connection.getPlayData(rival.getId(), null);
-							if(scores.isSucceeded()) {
-								scoredb.setScoreData(scores.getData());
-								Logger.getGlobal().info("IRからのスコア取得完了 : " + rival.getName());
-							} else {
-								Logger.getGlobal().warning("IRからのスコア取得失敗 : " + scores.getMessage());
-							}
-						}).start();
 					}
 
 				} catch (Throwable e) {
@@ -329,7 +362,37 @@ public class MusicSelector extends MainState {
 				} else {
 	                execute(MusicSelectCommand.OPEN_DOWNLOAD_SITE);
 				}
-			} else if (current instanceof GradeBar) {
+			} else if (current instanceof ExecutableBar) {
+				SongData song = ((ExecutableBar) current).getSongData();
+				resource.clear();
+				if (resource.setBMSFile(Paths.get(song.getPath()), play)) {
+					final Queue<DirectoryBar> dir = this.getBarRender().getDirectory();
+					if(!(dir.last() instanceof SameFolderBar)) {
+						Array<String> urls = new Array(main.getConfig().getTableURL());
+
+						boolean isdtable = false;
+						for (DirectoryBar bar : dir) {
+							if (bar instanceof TableBar) {
+								String currenturl = ((TableBar) bar).getUrl();
+								if (currenturl != null && urls.contains(currenturl, false)) {
+									isdtable = true;
+									resource.setTablename(bar.getTitle());
+								}
+							}
+							if (bar instanceof HashBar && isdtable) {
+								resource.setTablelevel(bar.getTitle());
+								break;
+							}
+						}
+					}
+					preview.stop();
+					main.changeState(MainStateType.DECIDE);
+					banners.disposeOld();
+					stagefiles.disposeOld();
+				} else {
+					main.getMessageRenderer().addMessage("Failed to loading BMS : Song not found, or Song has error", 1200, Color.RED, 1);
+				}
+			}else if (current instanceof GradeBar) {
 				if (play == PlayMode.PRACTICE) {
 					play = PlayMode.PLAY;
 				}

@@ -140,15 +140,15 @@ public class BMSPlayer extends MainState {
 
 		if (model.getRandom() != null && model.getRandom().length > 0) {
 			if (autoplay.isReplayMode()) {
-				model = resource.getGenerator().generate(replay.rand);
+				model = resource.loadBMSModel(replay.rand);
 				// 暫定処置
 				BMSModelUtils.setStartNoteTime(model, 1000);
-				BMSPlayerRule.validate(model, false);
+				BMSPlayerRule.validate(model);
 			} else if (resource.getReplayData().pattern != null) {
-				model = resource.getGenerator().generate(resource.getReplayData().rand);
+				model = resource.loadBMSModel(resource.getReplayData().rand);
 				// 暫定処置
 				BMSModelUtils.setStartNoteTime(model, 1000);
-				BMSPlayerRule.validate(model, false);
+				BMSPlayerRule.validate(model);
 			}
 			Logger.getGlobal().info("譜面分岐 : " + Arrays.toString(model.getRandom()));
 		}
@@ -816,6 +816,7 @@ public class BMSPlayer extends MainState {
 		replay.doubleoption = config.getDoubleoption();
 		replay.config = replayConfig;
 
+		score.setPassnotes(notes);
 		score.setMinbp(score.getEbd() + score.getLbd() + score.getEpr() + score.getLpr() + score.getEms() + score.getLms() + resource.getSongdata().getNotes() - notes);
 		score.setDeviceType(main.getInputProcessor().getDeviceType());
 		return score;
