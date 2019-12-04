@@ -2,28 +2,20 @@ package bms.player.beatoraja.launcher;
 
 import java.awt.Desktop;
 import java.io.File;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.net.URI;
 import java.net.URL;
 import java.nio.file.*;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.*;
 import java.util.logging.Logger;
 
 import bms.player.beatoraja.external.ScoreDataImporter;
-import org.apache.commons.dbutils.QueryRunner;
-import org.apache.commons.dbutils.handlers.MapListHandler;
 
-import com.badlogic.gdx.utils.Json;
-import com.badlogic.gdx.utils.JsonWriter.OutputType;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import bms.model.Mode;
 import bms.player.beatoraja.*;
-import bms.player.beatoraja.PlayModeConfig.ControllerConfig;
 import bms.player.beatoraja.play.JudgeAlgorithm;
 import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.song.*;
@@ -33,7 +25,6 @@ import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
-import javafx.scene.control.SpinnerValueFactory.IntegerSpinnerValueFactory;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
@@ -92,8 +83,6 @@ public class PlayConfigurationView implements Initializable {
 	private TextField playername;
 
 	@FXML
-	private ComboBox<PlayMode> inputconfig;
-	@FXML
 	private ComboBox<PlayMode> playconfig;
 	/**
 	 * ハイスピード
@@ -111,8 +100,6 @@ public class PlayConfigurationView implements Initializable {
 	private Spinner<Integer> gvalue;
 	@FXML
 	private Spinner<Double> hispeedmargin;
-	@FXML
-	private Spinner<Integer> inputduration;
 
 	@FXML
 	private ComboBox<Integer> scoreop;
@@ -174,6 +161,8 @@ public class PlayConfigurationView implements Initializable {
 	private CheckBox guidese;
 	@FXML
 	private CheckBox windowhold;
+	@FXML
+	private Spinner<Integer> extranotedepth;
 
 	@FXML
 	private CheckBox judgeregion;
@@ -196,14 +185,6 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private ComboBox<Integer> autosavereplay4;
 
-    @FXML
-    private CheckBox jkoc_hack;
-	@FXML
-	private CheckBox analogScratch;
-	@FXML
-	private ComboBox<Integer> analogScratchMode;
-	@FXML
-	private NumericSpinner<Integer> analogScratchThreshold;
     @FXML
     private CheckBox usecim;
 
@@ -233,6 +214,8 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private AudioConfigurationView audioController;
 	@FXML
+	private InputConfigurationView inputController;
+	@FXML
 	private ResourceConfigurationView resourceController;
 	@FXML
 	private MusicSelectConfigurationView musicselectController;
@@ -252,7 +235,7 @@ public class PlayConfigurationView implements Initializable {
 
 	private RequestToken requestToken = null;
 
-	private void initComboBox(ComboBox<Integer> combo, final String[] values) {
+	static void initComboBox(ComboBox<Integer> combo, final String[] values) {
 		combo.setCellFactory((param) -> new OptionListCell(values));
 		combo.setButtonCell(new OptionListCell(values));
 		for (int i = 0; i < values.length; i++) {
@@ -267,7 +250,6 @@ public class PlayConfigurationView implements Initializable {
 		lr2configurationassist.setHgap(25);
 		lr2configurationassist.setVgap(4);
 
-		initComboBox(analogScratchMode, new String[] { "Ver. 2 (Newest)", "Ver. 1 (~0.6.9)" });
 
 		String[] scoreOptions = new String[] { "OFF", "MIRROR", "RANDOM", "R-RANDOM", "S-RANDOM", "SPIRAL", "H-RANDOM",
 				"ALL-SCR", "RANDOM-EX", "S-RANDOM-EX" };
@@ -280,7 +262,6 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(gaugeop, new String[] { "ASSIST EASY", "EASY", "NORMAL", "HARD", "EX-HARD", "HAZARD" });
 		initComboBox(fixhispeed, new String[] { "OFF", "START BPM", "MAX BPM", "MAIN BPM", "MIN BPM" });
 		playconfig.getItems().setAll(PlayMode.values());
-		inputconfig.getItems().setAll(PlayMode.values());
 		initComboBox(lntype, new String[] { "LONG NOTE", "CHARGE NOTE", "HELL CHARGE NOTE" });
 		initComboBox(gaugeautoshift, new String[] { "NONE", "CONTINUE", "SURVIVAL TO GROOVE","BEST CLEAR","SELECT TO UNDER" });
 		initComboBox(bottomshiftablegauge, new String[] { "ASSIST EASY", "EASY", "NORMAL" });
@@ -394,9 +375,7 @@ public class PlayConfigurationView implements Initializable {
 
 		try {
 			Class.forName("org.sqlite.JDBC");
-			SongDatabaseAccessor songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(),
-					config.getBmsroot());
-			tableController.init(songdb);
+			tableController.init(MainLoader.getScoreDatabaseAccessor());
 			tableController.update(Paths.get(config.getTablepath() + "/" + "default.json"));
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
@@ -457,6 +436,8 @@ public class PlayConfigurationView implements Initializable {
 		hranthresholdbpm.getValueFactory().setValue(player.getHranThresholdBPM());
 		judgeregion.setSelected(player.isShowjudgearea());
 		markprocessednote.setSelected(player.isMarkprocessednote());
+		extranotedepth.getValueFactory().setValue(player.getExtranoteDepth());
+
 		target.setValue(player.getTarget());
 
 		irController.update(player);
@@ -469,10 +450,11 @@ public class PlayConfigurationView implements Initializable {
 			txtTwitterAuthenticated.setVisible(false);
 		}
 
+		pc = null;
 		playconfig.setValue(PlayMode.BEAT_7K);
 		updatePlayConfig();
-		inputconfig.setValue(PlayMode.BEAT_7K);
-		updateInputConfig();
+
+		inputController.update(player);
 		skinController.update(player);
 	}
 
@@ -505,14 +487,8 @@ public class PlayConfigurationView implements Initializable {
 
 		commitPlayer();
 
-		Json json = new Json();
-		json.setOutputType(OutputType.json);
-		try (FileWriter fw = new FileWriter("config.json")) {
-			fw.write(json.prettyPrint(config));
-			fw.flush();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
+		Config.write(config);
+
 		tableController.commit();
 	}
 
@@ -547,15 +523,16 @@ public class PlayConfigurationView implements Initializable {
 		player.setNomine(nomine.isSelected());
 		player.setHranThresholdBPM(getValue(hranthresholdbpm));
 		player.setMarkprocessednote(markprocessednote.isSelected());
+		player.setExtranoteDepth(extranotedepth.getValue());
 
 		player.setShowjudgearea(judgeregion.isSelected());
 		player.setTarget(target.getValue());
 
+		inputController.commit();
 		irController.commit();
 
-		updateInputConfig();
 		updatePlayConfig();
-		skinController.update(player);
+		skinController.commit();
 
 		PlayerConfig.write(config.getPlayerpath(), player);
 	}
@@ -630,34 +607,6 @@ public class PlayConfigurationView implements Initializable {
 		judgealgorithm.setValue(JudgeAlgorithm.getIndex(conf.getJudgetype()));
 	}
 
-	private PlayMode ic = null;
-
-    @FXML
-	public void updateInputConfig() {
-    	// TODO 各デバイス毎の最小入力間隔設定
-		if (ic != null) {
-			PlayModeConfig conf = player.getPlayConfig(Mode.valueOf(ic.name()));
-			conf.getKeyboardConfig().setDuration(getValue(inputduration));
-			for(ControllerConfig controller : conf.getController()) {
-				controller.setDuration(getValue(inputduration));
-				controller.setJKOC(jkoc_hack.isSelected());
-		        controller.setAnalogScratch(analogScratch.isSelected());
-		        controller.setAnalogScratchThreshold(analogScratchThreshold.getValue());
-		        controller.setAnalogScratchMode(analogScratchMode.getValue());
-			}
-		}
-		ic = inputconfig.getValue();
-		PlayModeConfig conf = player.getPlayConfig(Mode.valueOf(ic.name()));
-		inputduration.getValueFactory().setValue(conf.getKeyboardConfig().getDuration());
-		for(ControllerConfig controller : conf.getController()) {
-			inputduration.getValueFactory().setValue(controller.getDuration());
-	        jkoc_hack.setSelected(controller.getJKOC());
-	        analogScratch.setSelected(controller.isAnalogScratch());
-	        analogScratchMode.getSelectionModel().select(controller.getAnalogScratchMode());
-	        analogScratchThreshold.getValueFactory().setValue(controller.getAnalogScratchThreshold());
-		}
-	}
-
 	private <T> T getValue(Spinner<T> spinner) {
 		spinner.getValueFactory()
 				.setValue(spinner.getValueFactory().getConverter().fromString(spinner.getEditor().getText()));
@@ -703,9 +652,7 @@ public class PlayConfigurationView implements Initializable {
 	public void loadBMS(String updatepath, boolean updateAll) {
 		commit();
 		try {
-			Class.forName("org.sqlite.JDBC");
-			SongDatabaseAccessor songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(),
-					config.getBmsroot());
+			SongDatabaseAccessor songdb = MainLoader.getScoreDatabaseAccessor();
 			SongInformationAccessor infodb = config.isUseSongInfo() ?
 					new SongInformationAccessor(Paths.get("songinfo.db").toString()) : null;
 			Logger.getGlobal().info("song.db更新開始");
@@ -753,8 +700,7 @@ public class PlayConfigurationView implements Initializable {
 
 		try {
 			Class.forName("org.sqlite.JDBC");
-			SongDatabaseAccessor songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(),
-					config.getBmsroot());
+			SongDatabaseAccessor songdb = MainLoader.getScoreDatabaseAccessor();
 			String player = "player1";
 			ScoreDatabaseAccessor scoredb = new ScoreDatabaseAccessor(config.getPlayerpath() + "/" + player + "/score.db");
 			scoredb.createTable();

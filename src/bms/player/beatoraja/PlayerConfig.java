@@ -11,6 +11,7 @@ import javax.crypto.*;
 import javax.crypto.spec.SecretKeySpec;
 
 import bms.player.beatoraja.ir.IRConnectionManager;
+import bms.player.beatoraja.pattern.MineNoteModifier;
 import bms.player.beatoraja.play.GrooveGauge;
 import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.select.BarSorter;
@@ -90,10 +91,16 @@ public class PlayerConfig {
 	 * アシストオプション:地雷除去
 	 */
 	private boolean nomine = false;
+
+	private int mineMode = 0;
 	/**
 	 * アシストオプション:BPMガイド
 	 */
 	private boolean bpmguide = false;
+
+	private int extranoteType = 0;
+	private int extranoteDepth = 0;
+	private boolean extranoteScratch = false;
 
 	private boolean showjudgearea = false;
 
@@ -169,14 +176,6 @@ public class PlayerConfig {
 	 * 選曲時でのキー入力方式
 	 */
 	private int musicselectinput = 0;
-
-	private String irname = "";
-
-	private String userid = "";
-
-	private String password = "";
-
-	private int irsend = 0;
 
 	public static final int IR_SEND_ALWAYS = 0;
 	public static final int IR_SEND_COMPLETE_SONG = 1;
@@ -298,6 +297,30 @@ public class PlayerConfig {
 
 	public void setLegacynote(boolean legacynote) {
 		this.legacynote = legacynote;
+	}
+
+	public int getExtranoteDepth() {
+		return extranoteDepth;
+	}
+
+	public void setExtranoteDepth(int extranoteDepth) {
+		this.extranoteDepth = extranoteDepth;
+	}
+
+	public int getExtranoteType() {
+		return extranoteType;
+	}
+
+	public void setExtranoteType(int extranoteType) {
+		this.extranoteType = extranoteType;
+	}
+
+	public boolean isExtranoteScratch() {
+		return extranoteScratch;
+	}
+
+	public void setExtranoteScratch(boolean extranoteScratch) {
+		this.extranoteScratch = extranoteScratch;
 	}
 
 	public boolean isShowjudgearea() {
@@ -468,38 +491,6 @@ public class PlayerConfig {
 
 	public void setSkinHistory(SkinConfig[] skinHistory) {
 		this.skinHistory = skinHistory;
-	}
-
-	public String getUserid() {
-		return userid;
-	}
-
-	public void setUserid(String userid) {
-		this.userid = userid;
-	}
-
-	public String getPassword() {
-		return password;
-	}
-
-	public void setPassword(String password) {
-		this.password = password;
-	}
-
-	public String getIrname() {
-		return irname;
-	}
-
-	public void setIrname(String irname) {
-		this.irname = irname;
-	}
-
-	public int getIrsend() {
-		return irsend;
-	}
-
-	public void setIrsend(int irsend) {
-		this.irsend = irsend;
 	}
 
 	public IRConfig[] getIrconfig() {
@@ -690,21 +681,11 @@ public class PlayerConfig {
 		sevenToNinePattern = MathUtils.clamp(sevenToNinePattern, 0, 6);
 		sevenToNineType = MathUtils.clamp(sevenToNineType, 0, 2);
 
-		irsend = MathUtils.clamp(irsend, 0, 2);
+		mineMode = MathUtils.clamp(mineMode, 0, MineNoteModifier.Mode.values().length);
+		extranoteDepth = MathUtils.clamp(extranoteDepth, 0, 100);
+
 		if(irconfig == null) {
 			irconfig = new IRConfig[0];
-		}
-		
-		if(irconfig.length == 0) {
-			irconfig = new IRConfig[1];
-			IRConfig ir = new IRConfig();
-			ir.setIrname(irname != null && irname.length() > 0 ? irname : "mocha");
-			ir.setPassword(password);
-			ir.setUserid(userid);
-			ir.setIrsend(irsend);
-			irconfig[0] = ir;
-			irname = password = userid = "";
-			irsend = 0;
 		}
 		
 		for(int i = 0;i < irconfig.length;i++) {
@@ -807,7 +788,15 @@ public class PlayerConfig {
 			e.printStackTrace();
 		}
 	}
-	
+
+	public int getMineMode() {
+		return mineMode;
+	}
+
+	public void setMineMode(int mineMode) {
+		this.mineMode = mineMode;
+	}
+
 	public static class IRConfig implements Validatable{
 		private String irname = "";
 
