@@ -221,7 +221,7 @@ public class MusicSelectInputProcessor {
                 select.play(SOUND_OPTIONCHANGE);
             }
             if (property.isPressed(keystate, keytime, CONSTANT, true)) {
-                config.setConstant(!config.isConstant());
+                config.setScrollMode(config.getScrollMode() == 1 ? 0 : 1);
                 select.play(SOUND_OPTIONCHANGE);
             }
             if (property.isPressed(keystate, keytime, JUDGEAREA, true)) {
@@ -229,7 +229,7 @@ public class MusicSelectInputProcessor {
                 select.play(SOUND_OPTIONCHANGE);
             }
             if (property.isPressed(keystate, keytime, LEGACYNOTE, true)) {
-                config.setLegacynote(!config.isLegacynote());
+                config.setLongnoteMode(config.getLongnoteMode() == 1 ? 0 : 1);
                 select.play(SOUND_OPTIONCHANGE);
             }
             if (property.isPressed(keystate, keytime, MARKNOTE, true)) {
@@ -241,7 +241,7 @@ public class MusicSelectInputProcessor {
                 select.play(SOUND_OPTIONCHANGE);
             }
             if (property.isPressed(keystate, keytime, NOMINE, true)) {
-                config.setNomine(!config.isNomine());
+                config.setMineMode(config.getMineMode() == 1 ? 0 : 1);
                 select.play(SOUND_OPTIONCHANGE);
             }
         } else if (input.getNumberState()[5] || (input.startPressed() && input.isSelectPressed())) {
@@ -329,7 +329,7 @@ public class MusicSelectInputProcessor {
                 if (current instanceof SongBar && ((SongBar) current).existsSong() &&
                         (bar.getDirectory().size == 0 || !(bar.getDirectory().last() instanceof SameFolderBar))) {
                     SongData sd = ((SongBar) current).getSongData();
-                    bar.updateBar(new SameFolderBar(select, sd.getTitle(), sd.getFolder()));
+                    bar.updateBar(new SameFolderBar(select, sd.getFullTitle(), sd.getFolder()));
                     select.play(SOUND_FOLDEROPEN);
                 } else if (current instanceof GradeBar) {
                     List<Bar> songbars = Arrays.asList(((GradeBar) current).getSongDatas()).stream()
