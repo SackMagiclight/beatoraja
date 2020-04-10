@@ -93,13 +93,13 @@ public class MusicResult extends AbstractResult {
         	for(IRStatus irc : ir) {
     			boolean send = resource.isUpdateScore();
     			switch(irc.config.getIrsend()) {
-    			case PlayerConfig.IR_SEND_ALWAYS:
+    			case IRConfig.IR_SEND_ALWAYS:
     				break;
-    			case PlayerConfig.IR_SEND_COMPLETE_SONG:
+    			case IRConfig.IR_SEND_COMPLETE_SONG:
     				FloatArray gauge = resource.getGauge()[resource.getGrooveGauge().getType()];
     				send &= gauge.get(gauge.size - 1) > 0.0;
     				break;
-    			case PlayerConfig.IR_SEND_UPDATE_SCORE:
+    			case IRConfig.IR_SEND_UPDATE_SCORE:
     				send &= (newscore.getExscore() > oldscore.getExscore() || newscore.getClear() > oldscore.getClear()
     						|| newscore.getCombo() > oldscore.getCombo() || newscore.getMinbp() < oldscore.getMinbp());
     				break;
