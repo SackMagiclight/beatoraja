@@ -18,6 +18,7 @@ import bms.model.Mode;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.play.JudgeAlgorithm;
 import bms.player.beatoraja.play.TargetProperty;
+import bms.player.beatoraja.skin.SkinType;
 import bms.player.beatoraja.song.*;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
@@ -77,6 +78,8 @@ public class PlayConfigurationView implements Initializable {
 	private Tab courseTab;
 	@FXML
     private Tab streamTab;
+	@FXML
+    private Tab quickShortcutTab;
 	@FXML
 	private HBox controlPanel;
 
@@ -252,6 +255,8 @@ public class PlayConfigurationView implements Initializable {
 	private TableEditorView tableController;
 	@FXML
     private StreamEditorView streamController;
+	@FXML
+    private QuickShortcutView quickShortcutController;
 
 	private Config config;
 	private PlayerConfig player;
@@ -485,6 +490,7 @@ public class PlayConfigurationView implements Initializable {
 
 		inputController.update(player);
 		skinController.update(player);
+		quickShortcutController.update(player, skinController.getSkinHeader(SkinType.PLAY_7KEYS));
 	}
 
 	/**
@@ -573,6 +579,7 @@ public class PlayConfigurationView implements Initializable {
 		inputController.commit();
 		irController.commit();
 		streamController.commit();
+		quickShortcutController.commit();
 
 		updatePlayConfig();
 		skinController.commit();
