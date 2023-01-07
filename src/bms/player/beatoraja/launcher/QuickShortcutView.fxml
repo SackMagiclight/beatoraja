@@ -23,13 +23,16 @@
         <Label prefHeight="34.0" prefWidth="45.0" text="7KEYS:" /><Label fx:id="nowControllerName" prefHeight="34.0" prefWidth="200.0" />
     </HBox>
     <HBox prefHeight="37.0" prefWidth="723.0">
-    	<Label prefHeight="24.0" prefWidth="40.0" text="SKIN" />
+    	<Label prefHeight="24.0" prefWidth="120.0" text="BM CONTROLLER" />
     </HBox>
     <HBox prefHeight="37.0" prefWidth="723.0">
     	<Label prefHeight="24.0" prefWidth="30.0" text="1P" />
         <ComboBox fx:id="player1ControllerName" prefHeight="24.0" prefWidth="200.0" />
         <Label prefHeight="24.0" prefWidth="30.0" text="2P" />
         <ComboBox fx:id="player2ControllerName" prefHeight="24.0" prefWidth="200.0" />
+    </HBox>
+    <HBox prefHeight="37.0" prefWidth="723.0">
+    	<Label prefHeight="24.0" prefWidth="40.0" text="SKIN" />
     </HBox>
     <HBox prefHeight="37.0" prefWidth="723.0">
     	<Label prefHeight="24.0" prefWidth="60.0" text="1P OPTION" />

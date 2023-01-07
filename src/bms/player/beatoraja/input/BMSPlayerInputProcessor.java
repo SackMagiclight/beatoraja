@@ -412,6 +412,8 @@ public class BMSPlayerInputProcessor {
 			return isControlKeyPressed(ControlKeys.F3, MASK_CTRL_SHIFT);
 		case SWITCH_SCREEN_MODE:
 			return isControlKeyPressed(ControlKeys.F4);
+		case SWITCH_PLAYER:
+			return isControlKeyPressed(ControlKeys.F5);
 		case SAVE_SCREENSHOT:
 			return isControlKeyPressed(ControlKeys.F6);
 		case POST_TWITTER:
