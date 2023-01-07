@@ -444,6 +444,9 @@ public class MainController extends ApplicationAdapter {
 			message.setLength(0);
 			systemfont.draw(sprite, message.append("FPS ").append(Gdx.graphics.getFramesPerSecond()), 10,
 					config.getResolution().height - 2);
+			message.setLength(0);
+			systemfont.draw(sprite, message.append("Player: ").append(player.getName()), 10,
+					config.getResolution().height - 26);
 			if(debug) {
 				message.setLength(0);
 				systemfont.draw(sprite, message.append("Skin Pixmap Images ").append(SkinLoader.getResource().size()), 10,
@@ -538,6 +541,61 @@ public class MainController extends ApplicationAdapter {
             // config.setResolution(resolution);
             // input.getFunctiontime()[4] = 0;
             // }
+            
+            // switch player
+            if (input.isActivated(KeyCommand.SWITCH_PLAYER)) {
+            	// 既存のリソースを破棄する
+            	dispose();
+            	
+            	// 次にローテーションするプレイヤーを取得
+            	String[] playerIds = PlayerConfig.readAllPlayerID(config.getPlayerpath());
+            	int i = 0;
+            	String nowId = player.getId();
+            	String nextPlayerId = nowId;
+            	for (; i < playerIds.length; i++) {
+            		if(playerIds[i].equals(nowId)) {
+            			break;
+            		}
+            	}
+            	if(i < playerIds.length - 1) {
+            		nextPlayerId = playerIds[i + 1];
+            	} else {
+            		nextPlayerId = playerIds[0];
+            	}
+            	PlayerConfig nextPlayerConfig = PlayerConfig.readPlayerConfig(config.getPlayerpath(), nextPlayerId);
+            	
+            	// リソース全部作りなおす TODO:共通化
+            	this.player = nextPlayerConfig;
+            	input = new BMSPlayerInputProcessor(config, player);
+            	dispose();
+        		switch(config.getAudioConfig().getDriver()) {
+        		case OpenAL:
+        			audio = new GdxSoundDriver(config);
+        			break;
+        		}
+        		resource = new PlayerResource(audio, config, player);
+        		selector = new MusicSelector(this, songUpdated);
+        		if(player.getRequestEnable()) {
+        		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+        	        streamController.run();
+        		}
+        		decide = new MusicDecide(this);
+        		result = new MusicResult(this);
+        		gresult = new CourseResult(this);
+        		keyconfig = new KeyConfiguration(this);
+        		skinconfig = new SkinConfiguration(this, player);
+        		if (bmsfile != null) {
+        			if(resource.setBMSFile(bmsfile, auto)) {
+        				changeState(MainStateType.PLAY);
+        			} else {
+        				// ダミーステートに移行してすぐexitする
+        				changeState(MainStateType.CONFIG);
+        				exit();
+        			}
+        		} else {
+        			changeState(MainStateType.MUSICSELECT);
+        		}
+            }
 
             // screen shot
             if (input.isActivated(KeyCommand.SAVE_SCREENSHOT)) {
