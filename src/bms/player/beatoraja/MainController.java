@@ -121,7 +121,7 @@ public class MainController extends ApplicationAdapter {
 	private Thread screenshot;
 
 	private MusicDownloadProcessor download;
-	
+
 	private StreamController streamController;
 
 	public static final int timerCount = SkinProperty.TIMER_MAX + 1;
@@ -134,17 +134,16 @@ public class MainController extends ApplicationAdapter {
 
 	public static Discord discord;
 
-
 	public MainController(Path f, Config config, PlayerConfig player, BMSPlayerMode auto, boolean songUpdated) {
 		this.auto = auto;
 		this.config = config;
 		this.songUpdated = songUpdated;
 
-		for(int i = 0;i < offset.length;i++) {
+		for (int i = 0; i < offset.length; i++) {
 			offset[i] = new SkinOffset();
 		}
 
-		if(player == null) {
+		if (player == null) {
 			player = PlayerConfig.readPlayerConfig(config.getPlayerpath(), config.getPlayername());
 		}
 		this.player = player;
@@ -163,7 +162,7 @@ public class MainController extends ApplicationAdapter {
 		}
 		try {
 			Class.forName("org.sqlite.JDBC");
-			if(config.isUseSongInfo()) {
+			if (config.isUseSongInfo()) {
 				infodb = new SongInformationAccessor(config.getSonginfopath());
 			}
 		} catch (ClassNotFoundException e) {
@@ -173,13 +172,13 @@ public class MainController extends ApplicationAdapter {
 		playdata = new PlayDataAccessor(config);
 
 		Array<IRStatus> irarray = new Array<IRStatus>();
-		for(IRConfig irconfig : player.getIrconfig()) {
+		for (IRConfig irconfig : player.getIrconfig()) {
 			final IRConnection ir = IRConnectionManager.getIRConnection(irconfig.getIrname());
-			if(ir != null) {
-				if(irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
+			if (ir != null) {
+				if (irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
 				} else {
 					IRResponse<IRPlayerData> response = ir.login(irconfig.getUserid(), irconfig.getPassword());
-					if(response.isSucceeded()) {
+					if (response.isSucceeded()) {
 						irarray.add(new IRStatus(irconfig, ir, response.getData()));
 					} else {
 						Logger.getGlobal().warning("IRへのログイン失敗 : " + response.getMessage());
@@ -189,14 +188,14 @@ public class MainController extends ApplicationAdapter {
 
 		}
 		ir = irarray.toArray(IRStatus.class);
-		
+
 		rivals.update(this);
 
-		switch(config.getAudioConfig().getDriver()) {
+		switch (config.getAudioConfig().getDriver()) {
 		case PortAudio:
 			try {
 				audio = new PortAudioDriver(config);
-			} catch(Throwable e) {
+			} catch (Throwable e) {
 				e.printStackTrace();
 				config.getAudioConfig().setDriver(DriverType.OpenAL);
 			}
@@ -221,11 +220,11 @@ public class MainController extends ApplicationAdapter {
 	public PlayDataAccessor getPlayDataAccessor() {
 		return playdata;
 	}
-	
+
 	public RivalDataAccessor getRivalDataAccessor() {
 		return rivals;
 	}
-	
+
 	public RankingDataCache getRankingDataCache() {
 		return ircache;
 	}
@@ -288,11 +287,11 @@ public class MainController extends ApplicationAdapter {
 
 		if (newState != null && current != newState) {
 			Arrays.fill(timer, Long.MIN_VALUE);
-			if(current != null) {
+			if (current != null) {
 				current.setSkin(null);
 			}
 			newState.create();
-			if(newState.getSkin() != null) {
+			if (newState.getSkin() != null) {
 				newState.getSkin().prepare(newState);
 			}
 			if (current != null) {
@@ -336,20 +335,20 @@ public class MainController extends ApplicationAdapter {
 		messageRenderer = new MessageRenderer();
 
 		input = new BMSPlayerInputProcessor(config, player);
-		switch(config.getAudioConfig().getDriver()) {
+		switch (config.getAudioConfig().getDriver()) {
 		case OpenAL:
 			audio = new GdxSoundDriver(config);
 			break;
-//		case AudioDevice:
-//			audio = new GdxAudioDeviceDriver(config);
-//			break;
+		//		case AudioDevice:
+		//			audio = new GdxAudioDeviceDriver(config);
+		//			break;
 		}
 
 		resource = new PlayerResource(audio, config, player);
 		selector = new MusicSelector(this, songUpdated);
-		if(player.getRequestEnable()) {
-		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
-	        streamController.run();
+		if (player.getRequestEnable()) {
+			streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+			streamController.run();
 		}
 		decide = new MusicDecide(this);
 		result = new MusicResult(this);
@@ -357,7 +356,7 @@ public class MainController extends ApplicationAdapter {
 		keyconfig = new KeyConfiguration(this);
 		skinconfig = new SkinConfiguration(this, player);
 		if (bmsfile != null) {
-			if(resource.setBMSFile(bmsfile, auto)) {
+			if (resource.setBMSFile(bmsfile, auto)) {
 				changeState(MainStateType.PLAY);
 			} else {
 				// ダミーステートに移行してすぐexitする
@@ -388,17 +387,17 @@ public class MainController extends ApplicationAdapter {
 		polling.start();
 
 		Array<String> targetlist = new Array(player.getTargetlist());
-		for(int i = 0;i < rivals.getRivals().length;i++) {
+		for (int i = 0; i < rivals.getRivals().length; i++) {
 			targetlist.add("RIVAL_" + (i + 1));
 		}
 		TargetProperty.setTargets(targetlist.toArray(String.class));
 
-		Pixmap plainPixmap = new Pixmap(2,1, Pixmap.Format.RGBA8888);
-		plainPixmap.drawPixel(0,0, Color.toIntBits(255,0,0,0));
-		plainPixmap.drawPixel(1,0, Color.toIntBits(255,255,255,255));
+		Pixmap plainPixmap = new Pixmap(2, 1, Pixmap.Format.RGBA8888);
+		plainPixmap.drawPixel(0, 0, Color.toIntBits(255, 0, 0, 0));
+		plainPixmap.drawPixel(1, 0, Color.toIntBits(255, 255, 255, 255));
 		Texture plainTexture = new Texture(plainPixmap);
-		black = new TextureRegion(plainTexture,0,0,1,1);
-		white = new TextureRegion(plainTexture,1,0,1,1);
+		black = new TextureRegion(plainTexture, 0, 0, 1, 1);
+		white = new TextureRegion(plainTexture, 1, 0, 1, 1);
 		plainPixmap.dispose();
 
 		Gdx.gl.glClearColor(0, 0, 0, 1);
@@ -407,7 +406,7 @@ public class MainController extends ApplicationAdapter {
 			download = new MusicDownloadProcessor(config.getIpfsUrl(), (md5) -> {
 				SongData[] s = getSongDatabase().getSongDatas(md5);
 				String[] result = new String[s.length];
-				for(int i = 0;i < result.length;i++) {
+				for (int i = 0; i < result.length; i++) {
 					result[i] = s[i].getPath();
 				}
 				return result;
@@ -415,8 +414,8 @@ public class MainController extends ApplicationAdapter {
 			download.start(null);
 		}
 
-		if(ir.length > 0) {
-			messageRenderer.addMessage(ir.length + " IR Connection Succeed" ,5000, Color.GREEN, 1);
+		if (ir.length > 0) {
+			messageRenderer.addMessage(ir.length + " IR Connection Succeed", 5000, Color.GREEN, 1);
 		}
 	}
 
@@ -580,7 +579,15 @@ public class MainController extends ApplicationAdapter {
         		case OpenAL:
         			audio = new GdxSoundDriver(config);
         			break;
-        		}
+	            case PortAudio:
+	    			try {
+	    				audio = new PortAudioDriver(config);
+	    			} catch(Throwable e) {
+	    				e.printStackTrace();
+	    				config.getAudioConfig().setDriver(DriverType.OpenAL);
+	    			}
+	    			break;
+	    		}
         		resource = new PlayerResource(audio, config, player);
         		selector = new MusicSelector(this, songUpdated);
         		if(player.getRequestEnable()) {
@@ -643,6 +650,7 @@ public class MainController extends ApplicationAdapter {
 				updateSong = null;
 			}
         }
+
 	}
 
 	@Override
@@ -656,8 +664,8 @@ public class MainController extends ApplicationAdapter {
 			selector.dispose();
 		}
 		if (streamController != null) {
-		    streamController.dispose();
-        }
+			streamController.dispose();
+		}
 		if (decide != null) {
 			decide.dispose();
 		}
@@ -673,8 +681,11 @@ public class MainController extends ApplicationAdapter {
 		if (skinconfig != null) {
 			skinconfig.dispose();
 		}
+		if (audio != null) {
+			audio.dispose();
+		}
 		resource.dispose();
-//		input.dispose();
+		//		input.dispose();
 		SkinLoader.getResource().dispose();
 		ShaderManager.dispose();
 		if (download != null) {
@@ -699,7 +710,7 @@ public class MainController extends ApplicationAdapter {
 		current.resume();
 	}
 
-	public void saveConfig(){
+	public void saveConfig() {
 		Config.write(config);
 		PlayerConfig.write(config.getPlayerpath(), player);
 		Logger.getGlobal().info("設定情報を保存");
@@ -725,7 +736,7 @@ public class MainController extends ApplicationAdapter {
 		return sound;
 	}
 
-	public MusicDownloadProcessor getMusicDownloadProcessor(){
+	public MusicDownloadProcessor getMusicDownloadProcessor() {
 		return download;
 	}
 
@@ -755,7 +766,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public long getNowTime(int id) {
-		if(isTimerOn(id)) {
+		if (isTimerOn(id)) {
 			return (nowmicrotime - getMicroTimer(id)) / 1000;
 		}
 		return 0;
@@ -766,7 +777,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public long getNowMicroTime(int id) {
-		if(isTimerOn(id)) {
+		if (isTimerOn(id)) {
 			return nowmicrotime - getMicroTimer(id);
 		}
 		return 0;
@@ -805,8 +816,8 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void switchTimer(int id, boolean on) {
-		if(on) {
-			if(getMicroTimer(id) == Long.MIN_VALUE) {
+		if (on) {
+			if (getMicroTimer(id) == Long.MIN_VALUE) {
 				setMicroTimer(id, nowmicrotime);
 			}
 		} else {
@@ -945,20 +956,20 @@ public class MainController extends ApplicationAdapter {
 		private Path currentSoundPath;
 
 		public SystemSoundManager(Config config) {
-			if(config.getBgmpath() != null && config.getBgmpath().length() > 0) {
+			if (config.getBgmpath() != null && config.getBgmpath().length() > 0) {
 				scan(Paths.get(config.getBgmpath()).toAbsolutePath(), bgms, "select.wav");
 			}
-			if(config.getSoundpath() != null && config.getSoundpath().length() > 0) {
+			if (config.getSoundpath() != null && config.getSoundpath().length() > 0) {
 				scan(Paths.get(config.getSoundpath()).toAbsolutePath(), sounds, "clear.wav");
 			}
 			Logger.getGlobal().info("検出されたBGM Set : " + bgms.size + " Sound Set : " + sounds.size);
 		}
 
 		public void shuffle() {
-			if(bgms.size > 0) {
+			if (bgms.size > 0) {
 				currentBGMPath = bgms.get((int) (Math.random() * bgms.size));
 			}
-			if(sounds.size > 0) {
+			if (sounds.size > 0) {
 				currentSoundPath = sounds.get((int) (Math.random() * sounds.size));
 			}
 			Logger.getGlobal().info("BGM Set : " + currentBGMPath + " Sound Set : " + currentSoundPath);

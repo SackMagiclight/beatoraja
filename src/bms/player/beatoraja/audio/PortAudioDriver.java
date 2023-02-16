@@ -31,13 +31,11 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 	private final Thread mixer;
 
 	public static DeviceInfo[] getDevices() {
-		if(devices == null) {
-			PortAudio.initialize();
-			
-			devices = new DeviceInfo[PortAudio.getDeviceCount()];
-			for(int i = 0;i < devices.length;i++) {
-				devices[i] = PortAudio.getDeviceInfo(i);
-			}
+		PortAudio.initialize();
+		
+		devices = new DeviceInfo[PortAudio.getDeviceCount()];
+		for(int i = 0;i < devices.length;i++) {
+			devices[i] = PortAudio.getDeviceInfo(i);
 		}
 		return devices;
 	}
