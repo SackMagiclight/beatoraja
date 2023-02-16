@@ -111,7 +111,7 @@ public class MainController {
 	private Thread screenshot;
 
 	private MusicDownloadProcessor download;
-	
+
 	private StreamController streamController;
 
 	public static final int offsetCount = SkinProperty.OFFSET_MAX + 1;
@@ -120,6 +120,7 @@ public class MainController {
 	protected TextureRegion black;
 	protected TextureRegion white;
 
+	public static Discord discord;
 	private final Array<MainStateListener> stateListener = new Array<MainStateListener>();
 
 	public MainController(Path f, Config config, PlayerConfig player, BMSPlayerMode auto, boolean songUpdated) {
@@ -127,11 +128,11 @@ public class MainController {
 		this.config = config;
 		this.songUpdated = songUpdated;
 
-		for(int i = 0;i < offset.length;i++) {
+		for (int i = 0; i < offset.length; i++) {
 			offset[i] = new SkinOffset();
 		}
 
-		if(player == null) {
+		if (player == null) {
 			player = PlayerConfig.readPlayerConfig(config.getPlayerpath(), config.getPlayername());
 		}
 		this.player = player;
@@ -150,7 +151,7 @@ public class MainController {
 		}
 		try {
 			Class.forName("org.sqlite.JDBC");
-			if(config.isUseSongInfo()) {
+			if (config.isUseSongInfo()) {
 				infodb = new SongInformationAccessor(config.getSonginfopath());
 			}
 		} catch (ClassNotFoundException e) {
@@ -160,13 +161,13 @@ public class MainController {
 		playdata = new PlayDataAccessor(config);
 
 		Array<IRStatus> irarray = new Array<IRStatus>();
-		for(IRConfig irconfig : player.getIrconfig()) {
+		for (IRConfig irconfig : player.getIrconfig()) {
 			final IRConnection ir = IRConnectionManager.getIRConnection(irconfig.getIrname());
-			if(ir != null) {
-				if(irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
+			if (ir != null) {
+				if (irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
 				} else {
 					IRResponse<IRPlayerData> response = ir.login(new IRAccount(irconfig.getUserid(), irconfig.getPassword(), ""));
-					if(response.isSucceeded()) {
+					if (response.isSucceeded()) {
 						irarray.add(new IRStatus(irconfig, ir, response.getData()));
 					} else {
 						Logger.getGlobal().warning("IRへのログイン失敗 : " + response.getMessage());
@@ -176,14 +177,14 @@ public class MainController {
 
 		}
 		ir = irarray.toArray(IRStatus.class);
-		
+
 		rivals.update(this);
 
-		switch(config.getAudioConfig().getDriver()) {
+		switch (config.getAudioConfig().getDriver()) {
 		case PortAudio:
 			try {
 				audio = new PortAudioDriver(config);
-			} catch(Throwable e) {
+			} catch (Throwable e) {
 				e.printStackTrace();
 				config.getAudioConfig().setDriver(DriverType.OpenAL);
 			}
@@ -213,11 +214,11 @@ public class MainController {
 	public PlayDataAccessor getPlayDataAccessor() {
 		return playdata;
 	}
-	
+
 	public RivalDataAccessor getRivalDataAccessor() {
 		return rivals;
 	}
-	
+
 	public RankingDataCache getRankingDataCache() {
 		return ircache;
 	}
@@ -273,12 +274,12 @@ public class MainController {
 		}
 
 		if (newState != null && current != newState) {
-			if(current != null) {
+			if (current != null) {
 				current.shutdown();
 				current.setSkin(null);
 			}
 			newState.create();
-			if(newState.getSkin() != null) {
+			if (newState.getSkin() != null) {
 				newState.getSkin().prepare(newState);
 			}
 			current = newState;
@@ -319,20 +320,20 @@ public class MainController {
 		messageRenderer = new MessageRenderer(config.getMessagefontpath());
 
 		input = new BMSPlayerInputProcessor(config, player);
-		switch(config.getAudioConfig().getDriver()) {
+		switch (config.getAudioConfig().getDriver()) {
 		case OpenAL:
 			audio = new GdxSoundDriver(config);
 			break;
-//		case AudioDevice:
-//			audio = new GdxAudioDeviceDriver(config);
-//			break;
+		//		case AudioDevice:
+		//			audio = new GdxAudioDeviceDriver(config);
+		//			break;
 		}
 
 		resource = new PlayerResource(audio, config, player);
 		selector = new MusicSelector(this, songUpdated);
-		if(player.getRequestEnable()) {
-		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
-	        streamController.run();
+		if (player.getRequestEnable()) {
+			streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+			streamController.run();
 		}
 		decide = new MusicDecide(this);
 		result = new MusicResult(this);
@@ -340,7 +341,7 @@ public class MainController {
 		keyconfig = new KeyConfiguration(this);
 		skinconfig = new SkinConfiguration(this, player);
 		if (bmsfile != null) {
-			if(resource.setBMSFile(bmsfile, auto)) {
+			if (resource.setBMSFile(bmsfile, auto)) {
 				changeState(MainStateType.PLAY);
 			} else {
 				// ダミーステートに移行してすぐexitする
@@ -376,12 +377,12 @@ public class MainController {
 		}
 		TargetProperty.setTargets(targetlist.toArray(String.class), this);
 
-		Pixmap plainPixmap = new Pixmap(2,1, Pixmap.Format.RGBA8888);
-		plainPixmap.drawPixel(0,0, Color.toIntBits(255,0,0,0));
-		plainPixmap.drawPixel(1,0, Color.toIntBits(255,255,255,255));
+		Pixmap plainPixmap = new Pixmap(2, 1, Pixmap.Format.RGBA8888);
+		plainPixmap.drawPixel(0, 0, Color.toIntBits(255, 0, 0, 0));
+		plainPixmap.drawPixel(1, 0, Color.toIntBits(255, 255, 255, 255));
 		Texture plainTexture = new Texture(plainPixmap);
-		black = new TextureRegion(plainTexture,0,0,1,1);
-		white = new TextureRegion(plainTexture,1,0,1,1);
+		black = new TextureRegion(plainTexture, 0, 0, 1, 1);
+		white = new TextureRegion(plainTexture, 1, 0, 1, 1);
 		plainPixmap.dispose();
 
 		Gdx.gl.glClearColor(0, 0, 0, 1);
@@ -390,7 +391,7 @@ public class MainController {
 			download = new MusicDownloadProcessor(config.getIpfsUrl(), (md5) -> {
 				SongData[] s = getSongDatabase().getSongDatas(md5);
 				String[] result = new String[s.length];
-				for(int i = 0;i < result.length;i++) {
+				for (int i = 0; i < result.length; i++) {
 					result[i] = s[i].getPath();
 				}
 				return result;
@@ -398,8 +399,8 @@ public class MainController {
 			download.start(null);
 		}
 
-		if(ir.length > 0) {
-			messageRenderer.addMessage(ir.length + " IR Connection Succeed" ,5000, Color.GREEN, 1);
+		if (ir.length > 0) {
+			messageRenderer.addMessage(ir.length + " IR Connection Succeed", 5000, Color.GREEN, 1);
 		}
 	}
 
@@ -559,7 +560,15 @@ public class MainController {
         		case OpenAL:
         			audio = new GdxSoundDriver(config);
         			break;
-        		}
+	            case PortAudio:
+	    			try {
+	    				audio = new PortAudioDriver(config);
+	    			} catch(Throwable e) {
+	    				e.printStackTrace();
+	    				config.getAudioConfig().setDriver(DriverType.OpenAL);
+	    			}
+	    			break;
+	    		}
         		resource = new PlayerResource(audio, config, player);
         		selector = new MusicSelector(this, songUpdated);
         		if(player.getRequestEnable()) {
@@ -622,6 +631,7 @@ public class MainController {
 				updateSong = null;
 			}
         }
+
 	}
 
 	public void dispose() {
@@ -634,8 +644,8 @@ public class MainController {
 			selector.dispose();
 		}
 		if (streamController != null) {
-		    streamController.dispose();
-        }
+			streamController.dispose();
+		}
 		if (decide != null) {
 			decide.dispose();
 		}
@@ -651,8 +661,11 @@ public class MainController {
 		if (skinconfig != null) {
 			skinconfig.dispose();
 		}
+		if (audio != null) {
+			audio.dispose();
+		}
 		resource.dispose();
-//		input.dispose();
+		//		input.dispose();
 		SkinLoader.getResource().dispose();
 		ShaderManager.dispose();
 		if (download != null) {
@@ -674,7 +687,7 @@ public class MainController {
 		current.resume();
 	}
 
-	public void saveConfig(){
+	public void saveConfig() {
 		Config.write(config);
 		PlayerConfig.write(config.getPlayerpath(), player);
 		Logger.getGlobal().info("設定情報を保存");
@@ -700,14 +713,14 @@ public class MainController {
 		return sound;
 	}
 
-	public MusicDownloadProcessor getMusicDownloadProcessor(){
+	public MusicDownloadProcessor getMusicDownloadProcessor() {
 		return download;
 	}
 
 	public MessageRenderer getMessageRenderer() {
 		return messageRenderer;
 	}
-	
+
 	public void updateMainStateListener(int status) {
 		for(MainStateListener listener : stateListener) {
 			listener.update(current, status);
