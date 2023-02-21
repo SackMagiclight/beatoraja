@@ -552,10 +552,44 @@ public class MainController {
             	}
             	PlayerConfig nextPlayerConfig = PlayerConfig.readPlayerConfig(config.getPlayerpath(), nextPlayerId);
             	
-            	// リソース全部作りなおす
-            	dispose();
+            	// リソース全部作りなおす TODO:共通化
             	this.player = nextPlayerConfig;
-            	create();
+            	input = new BMSPlayerInputProcessor(config, player);
+        		switch(config.getAudioConfig().getDriver()) {
+        		case OpenAL:
+        			audio = new GdxSoundDriver(config);
+        			break;
+	            case PortAudio:
+	    			try {
+	    				audio = new PortAudioDriver(config);
+	    			} catch(Throwable e) {
+	    				e.printStackTrace();
+	    				config.getAudioConfig().setDriver(DriverType.OpenAL);
+	    			}
+	    			break;
+	    		}
+        		resource = new PlayerResource(audio, config, player);
+        		selector = new MusicSelector(this, songUpdated);
+        		if(player.getRequestEnable()) {
+        		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+        	        streamController.run();
+        		}
+        		decide = new MusicDecide(this);
+        		result = new MusicResult(this);
+        		gresult = new CourseResult(this);
+        		keyconfig = new KeyConfiguration(this);
+        		skinconfig = new SkinConfiguration(this, player);
+        		if (bmsfile != null) {
+        			if(resource.setBMSFile(bmsfile, auto)) {
+        				changeState(MainStateType.PLAY);
+        			} else {
+        				// ダミーステートに移行してすぐexitする
+        				changeState(MainStateType.CONFIG);
+        				exit();
+        			}
+        		} else {
+        			changeState(MainStateType.MUSICSELECT);
+        		}
             }
 
             // screen shot
