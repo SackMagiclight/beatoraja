@@ -197,7 +197,7 @@ public class BMSResource {
 	}
 
 	public void dispose() {
-		if (audio != null) {
+		if (!MainController.keepAudioDriver && audio != null) {
 			audio.dispose();
 			audio = null;
 		}

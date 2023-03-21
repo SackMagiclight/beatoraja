@@ -51,6 +51,8 @@ public class MainController {
 
 	public static final boolean debug = false;
 
+	public static boolean keepAudioDriver = true;
+
 	/**
 	 * 起動時間
 	 */
@@ -122,6 +124,8 @@ public class MainController {
 
 	public static Discord discord;
 	private final Array<MainStateListener> stateListener = new Array<MainStateListener>();
+
+	private long lastSwithPlayer = System.currentTimeMillis();
 
 	public MainController(Path f, Config config, PlayerConfig player, BMSPlayerMode auto, boolean songUpdated) {
 		this.auto = auto;
@@ -532,64 +536,47 @@ public class MainController {
             
             // switch player
             if (input.isActivated(KeyCommand.SWITCH_PLAYER)) {
-            	// 既存のリソースを破棄する
-            	dispose();
-            	
-            	// 次にローテーションするプレイヤーを取得
-            	String[] playerIds = PlayerConfig.readAllPlayerID(config.getPlayerpath());
-            	int i = 0;
-            	String nowId = player.getId();
-            	String nextPlayerId = nowId;
-            	for (; i < playerIds.length; i++) {
-            		if(playerIds[i].equals(nowId)) {
-            			break;
-            		}
+            	Logger.getGlobal().info(Long.toString(lastSwithPlayer));
+            	Logger.getGlobal().info(Long.toString(System.currentTimeMillis()));
+            	if ((lastSwithPlayer + 2000) < System.currentTimeMillis()) {
+	            	// 既存のリソースを破棄する
+	            	dispose();
+	            	
+	            	// 次にローテーションするプレイヤーを取得
+	            	String[] playerIds = PlayerConfig.readAllPlayerID(config.getPlayerpath());
+	            	int i = 0;
+	            	String nowId = player.getId();
+	            	String nextPlayerId = nowId;
+	            	for (; i < playerIds.length; i++) {
+	            		if(playerIds[i].equals(nowId)) {
+	            			break;
+	            		}
+	            	}
+	            	if(i < playerIds.length - 1) {
+	            		nextPlayerId = playerIds[i + 1];
+	            	} else {
+	            		nextPlayerId = playerIds[0];
+	            	}
+	            	PlayerConfig nextPlayerConfig = PlayerConfig.readPlayerConfig(config.getPlayerpath(), nextPlayerId);
+	            	
+	            	// リソース全部作りなおす TODO:共通化
+	            	this.player = nextPlayerConfig;
+	            	input = new BMSPlayerInputProcessor(config, player);
+	        		resource = new PlayerResource(audio, config, player);
+	        		selector = new MusicSelector(this, songUpdated);
+	        		if(player.getRequestEnable()) {
+	        		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+	        	        streamController.run();
+	        		}
+	        		decide = new MusicDecide(this);
+	        		result = new MusicResult(this);
+	        		gresult = new CourseResult(this);
+	        		keyconfig = new KeyConfiguration(this);
+	        		skinconfig = new SkinConfiguration(this, player);
+	        		changeState(MainStateType.CONFIG);
+	        		changeState(MainStateType.MUSICSELECT);
+	        		lastSwithPlayer = System.currentTimeMillis();
             	}
-            	if(i < playerIds.length - 1) {
-            		nextPlayerId = playerIds[i + 1];
-            	} else {
-            		nextPlayerId = playerIds[0];
-            	}
-            	PlayerConfig nextPlayerConfig = PlayerConfig.readPlayerConfig(config.getPlayerpath(), nextPlayerId);
-            	
-            	// リソース全部作りなおす TODO:共通化
-            	this.player = nextPlayerConfig;
-            	input = new BMSPlayerInputProcessor(config, player);
-        		switch(config.getAudioConfig().getDriver()) {
-        		case OpenAL:
-        			audio = new GdxSoundDriver(config);
-        			break;
-	            case PortAudio:
-	    			try {
-	    				audio = new PortAudioDriver(config);
-	    			} catch(Throwable e) {
-	    				e.printStackTrace();
-	    				config.getAudioConfig().setDriver(DriverType.OpenAL);
-	    			}
-	    			break;
-	    		}
-        		resource = new PlayerResource(audio, config, player);
-        		selector = new MusicSelector(this, songUpdated);
-        		if(player.getRequestEnable()) {
-        		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
-        	        streamController.run();
-        		}
-        		decide = new MusicDecide(this);
-        		result = new MusicResult(this);
-        		gresult = new CourseResult(this);
-        		keyconfig = new KeyConfiguration(this);
-        		skinconfig = new SkinConfiguration(this, player);
-        		if (bmsfile != null) {
-        			if(resource.setBMSFile(bmsfile, auto)) {
-        				changeState(MainStateType.PLAY);
-        			} else {
-        				// ダミーステートに移行してすぐexitする
-        				changeState(MainStateType.CONFIG);
-        				exit();
-        			}
-        		} else {
-        			changeState(MainStateType.MUSICSELECT);
-        		}
             }
 
             // screen shot
@@ -660,7 +647,7 @@ public class MainController {
 		if (skinconfig != null) {
 			skinconfig.dispose();
 		}
-		if (audio != null) {
+		if (!keepAudioDriver && audio != null) {
 			audio.dispose();
 		}
 		resource.dispose();

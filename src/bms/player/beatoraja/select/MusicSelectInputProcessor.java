@@ -371,6 +371,7 @@ public class MusicSelectInputProcessor {
         }
 
         if (input.isControlKeyPressed(ControlKeys.ESCAPE)) {
+        	MainController.keepAudioDriver = false;
             select.main.exit();
         }
     }
