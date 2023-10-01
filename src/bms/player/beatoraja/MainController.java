@@ -8,7 +8,6 @@ import java.util.*;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
-import bms.player.beatoraja.config.Discord;
 import org.lwjgl.input.Mouse;
 
 import com.badlogic.gdx.*;
@@ -40,6 +39,7 @@ import bms.player.beatoraja.select.bar.TableBar;
 import bms.player.beatoraja.skin.SkinLoader;
 import bms.player.beatoraja.skin.SkinObject.SkinOffset;
 import bms.player.beatoraja.skin.SkinProperty;
+import bms.player.beatoraja.skin.property.StringPropertyFactory;
 import bms.player.beatoraja.song.*;
 import bms.player.beatoraja.stream.StreamController;
 import bms.tool.mdprocessor.MusicDownloadProcessor;
@@ -51,7 +51,7 @@ import bms.tool.mdprocessor.MusicDownloadProcessor;
  */
 public class MainController extends ApplicationAdapter {
 
-	private static final String VERSION = "beatoraja 0.8.5";
+	private static final String VERSION = "beatoraja 0.8.6";
 
 	public static final boolean debug = false;
 
@@ -81,11 +81,8 @@ public class MainController extends ApplicationAdapter {
 	private MessageRenderer messageRenderer;
 
 	private MainState current;
-	/**
-	 * 状態の開始時間
-	 */
-	private long starttime;
-	private long nowmicrotime;
+	
+	private TimerManager timer;
 
 	private Config config;
 	private PlayerConfig player;
@@ -126,15 +123,13 @@ public class MainController extends ApplicationAdapter {
 
 	private StreamController streamController;
 
-	public static final int timerCount = SkinProperty.TIMER_MAX + 1;
-	private final long[] timer = new long[timerCount];
 	public static final int offsetCount = SkinProperty.OFFSET_MAX + 1;
 	private final SkinOffset[] offset = new SkinOffset[offsetCount];
 
 	protected TextureRegion black;
 	protected TextureRegion white;
 
-	public static Discord discord;
+	private final Array<MainStateListener> stateListener = new Array<MainStateListener>();
 
 	private long lastSwithPlayer = System.currentTimeMillis();
 
@@ -181,8 +176,8 @@ public class MainController extends ApplicationAdapter {
 			if (ir != null) {
 				if (irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
 				} else {
-					IRResponse<IRPlayerData> response = ir.login(irconfig.getUserid(), irconfig.getPassword());
-					if (response.isSucceeded()) {
+					IRResponse<IRPlayerData> response = ir.login(new IRAccount(irconfig.getUserid(), irconfig.getPassword(), ""));
+					if(response.isSucceeded()) {
 						irarray.add(new IRStatus(irconfig, ir, response.getData()));
 					} else {
 						Logger.getGlobal().warning("IRへのログイン失敗 : " + response.getMessage());
@@ -206,7 +201,12 @@ public class MainController extends ApplicationAdapter {
 			break;
 		}
 
+		timer = new TimerManager();
 		sound = new SystemSoundManager(config);
+		
+		if(config.isUseDiscordRPC()) {
+			stateListener.add(new DiscordListener());
+		}
 	}
 
 	public SkinOffset getOffset(int index) {
@@ -253,8 +253,6 @@ public class MainController extends ApplicationAdapter {
 		MainState newState = null;
 		switch (state) {
 		case MUSICSELECT:
-			discord = new Discord("In Music Select Menu", "");
-			discord.update();
 			if (this.bmsfile != null) {
 				exit();
 			} else {
@@ -272,13 +270,9 @@ public class MainController extends ApplicationAdapter {
 			newState = bmsplayer;
 			break;
 		case RESULT:
-			discord = new Discord("Result Screen", "");
-			discord.update();
 			newState = result;
 			break;
 		case COURSERESULT:
-			discord = new Discord("Result Screen", "");
-			discord.update();
 			newState = gresult;
 			break;
 		case CONFIG:
@@ -290,8 +284,7 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		if (newState != null && current != newState) {
-			Arrays.fill(timer, Long.MIN_VALUE);
-			if (current != null) {
+			if(current != null) {
 				current.setSkin(null);
 			}
 			newState.create();
@@ -302,9 +295,9 @@ public class MainController extends ApplicationAdapter {
 				current.shutdown();
 			}
 			current = newState;
-			starttime = System.nanoTime();
-			nowmicrotime = ((System.nanoTime() - starttime) / 1000);
+			timer.setMainState(newState);
 			current.prepare();
+			updateMainStateListener(0);
 		}
 		if (current.getStage() != null) {
 			Gdx.input.setInputProcessor(new InputMultiplexer(current.getStage(), input.getKeyBoardInputProcesseor()));
@@ -394,7 +387,7 @@ public class MainController extends ApplicationAdapter {
 		for (int i = 0; i < rivals.getRivals().length; i++) {
 			targetlist.add("RIVAL_" + (i + 1));
 		}
-		TargetProperty.setTargets(targetlist.toArray(String.class));
+		TargetProperty.setTargets(targetlist.toArray(String.class), this);
 
 		Pixmap plainPixmap = new Pixmap(2, 1, Pixmap.Format.RGBA8888);
 		plainPixmap.drawPixel(0, 0, Color.toIntBits(255, 0, 0, 0));
@@ -430,7 +423,7 @@ public class MainController extends ApplicationAdapter {
 	@Override
 	public void render() {
 //		input.poll();
-		nowmicrotime = ((System.nanoTime() - starttime) / 1000);
+		timer.update();
 
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -480,9 +473,6 @@ public class MainController extends ApplicationAdapter {
 				message.setLength(0);
 				systemfont.draw(sprite, message.append("Banner Pixmap Resource Size ").append(selector.getBannerResource().size()), 10,
 						config.getResolution().height - 170);
-				message.setLength(0);
-				systemfont.draw(sprite, message.append("Current Target ").append(player.getTargetid()), 10,
-						config.getResolution().height - 194);
 			}
 
 			sprite.end();
@@ -729,6 +719,12 @@ public class MainController extends ApplicationAdapter {
 		return messageRenderer;
 	}
 
+	public void updateMainStateListener(int status) {
+		for(MainStateListener listener : stateListener) {
+			listener.update(current, status);
+		}
+	}
+
 	public long getPlayTime() {
 		return System.currentTimeMillis() - boottime;
 	}
@@ -738,34 +734,32 @@ public class MainController extends ApplicationAdapter {
 		return cl;
 	}
 
+	public TimerManager getTimer() {
+		return timer;
+	}
+
 	public long getStartTime() {
-		return starttime / 1000000;
+		return timer.getStartTime();
 	}
 
 	public long getStartMicroTime() {
-		return starttime / 1000;
+		return timer.getStartMicroTime();
 	}
 
 	public long getNowTime() {
-		return nowmicrotime / 1000;
+		return timer.getNowTime();
 	}
 
 	public long getNowTime(int id) {
-		if (isTimerOn(id)) {
-			return (nowmicrotime - getMicroTimer(id)) / 1000;
-		}
-		return 0;
+		return timer.getNowTime(id);
 	}
 
 	public long getNowMicroTime() {
-		return nowmicrotime;
+		return timer.getNowMicroTime();
 	}
 
 	public long getNowMicroTime(int id) {
-		if (isTimerOn(id)) {
-			return nowmicrotime - getMicroTimer(id);
-		}
-		return 0;
+		return timer.getNowMicroTime(id);
 	}
 
 	public long getTimer(int id) {
@@ -773,11 +767,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public long getMicroTimer(int id) {
-		if (id >= 0 && id < timerCount) {
-			return timer[id];
-		} else {
-			return current.getSkin().getMicroCustomTimer(id);
-		}
+		return timer.getMicroTimer(id);
 	}
 
 	public boolean isTimerOn(int id) {
@@ -785,7 +775,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void setTimerOn(int id) {
-		setMicroTimer(id, nowmicrotime);
+		timer.setTimerOn(id);
 	}
 
 	public void setTimerOff(int id) {
@@ -793,21 +783,11 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void setMicroTimer(int id, long microtime) {
-		if (id >= 0 && id < timerCount) {
-			timer[id] = microtime;
-		} else {
-			current.getSkin().setMicroCustomTimer(id, microtime);
-		}
+		timer.setMicroTimer(id, microtime);
 	}
 
 	public void switchTimer(int id, boolean on) {
-		if (on) {
-			if (getMicroTimer(id) == Long.MIN_VALUE) {
-				setMicroTimer(id, nowmicrotime);
-			}
-		} else {
-			setMicroTimer(id, Long.MIN_VALUE);
-		}
+		timer.switchTimer(id, on);
 	}
 
 	private UpdateThread updateSong;
