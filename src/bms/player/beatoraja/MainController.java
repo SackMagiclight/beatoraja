@@ -122,7 +122,6 @@ public class MainController {
 	protected TextureRegion black;
 	protected TextureRegion white;
 
-	public static Discord discord;
 	private final Array<MainStateListener> stateListener = new Array<MainStateListener>();
 
 	private long lastSwithPlayer = System.currentTimeMillis();
