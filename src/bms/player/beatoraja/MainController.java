@@ -19,6 +19,7 @@ import com.badlogic.gdx.utils.StringBuilder;
 import bms.player.beatoraja.AudioConfig.DriverType;
 import bms.player.beatoraja.MainState.MainStateType;
 import bms.player.beatoraja.MessageRenderer.Message;
+import bms.player.beatoraja.SystemSoundManager.SoundType;
 import bms.player.beatoraja.audio.*;
 import bms.player.beatoraja.config.KeyConfiguration;
 import bms.player.beatoraja.config.SkinConfiguration;
@@ -539,6 +540,11 @@ public class MainController {
             	Logger.getGlobal().info(Long.toString(System.currentTimeMillis()));
             	if ((lastSwithPlayer + 2000) < System.currentTimeMillis()) {
 	            	// 既存のリソースを破棄する
+            			SystemSoundManager mng = this.getSoundManager();
+					for (SoundType soundType : SoundType.values()) {
+						mng.stop(soundType);
+					}
+        			
 	            	dispose();
 	            	
 	            	// 次にローテーションするプレイヤーを取得
