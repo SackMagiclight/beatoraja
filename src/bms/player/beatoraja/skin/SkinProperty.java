@@ -274,6 +274,7 @@ public class SkinProperty {
     public static final int NUMBER_LANECOVER1 = 14;
 	public static final int NUMBER_LIFT1 = 314;
 	public static final int NUMBER_HIDDEN1 = 315;
+	public static final int NUMBER_LANECOVER2 = 316;
 
 	public static final int NUMBER_TOTALPLAYTIME_HOUR = 17;
 	public static final int NUMBER_TOTALPLAYTIME_MINUTE = 18;
@@ -869,6 +870,8 @@ public class SkinProperty {
 	public static final int OFFSET_JUDGEDETAIL_2P = 33;
 	public static final int OFFSET_JUDGE_3P = 32;
 	public static final int OFFSET_JUDGEDETAIL_3P = 33;
+
+	public static final int OPTION_CONSTANT = 400;
 
 	// オフセットのユーザー定義は40番以降を使用して下さい
 
