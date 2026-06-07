@@ -4,6 +4,7 @@ import java.io.*;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.function.BiConsumer;
 import java.util.logging.Logger;
 import java.util.stream.Stream;
 
@@ -11,7 +12,6 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 
 import bms.model.Mode;
 import bms.player.beatoraja.*;
-import bms.player.beatoraja.SkinConfig.Offset;
 import bms.player.beatoraja.play.PlaySkin;
 import bms.player.beatoraja.play.SkinGauge;
 import bms.player.beatoraja.play.bga.BGAProcessor;
@@ -46,10 +46,12 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 	 * 描画サイズ
 	 */
 	public final Resolution dst;
-	private boolean usecim;
-	private String skinpath;
+	boolean usecim;
+	String skinpath;
 
 	protected S skin;
+
+	ObjectMap<String, String> filemap = new ObjectMap<String, String>();
 
 	private MainState state;
 
@@ -191,8 +193,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				for (int i = 0; i < values[4]; i++) {
 					tr[i] = (TextureRegion[]) imagesetarray.get(values[5+i]);
 				}
-				part = new SkinImage(tr, values[2], values[1]);
-				part.setReferenceID(values[3]);
+				part = new SkinImage(tr, values[2], values[1], values[3]);
 				if (part != null) {
 					skin.add(part);
 				}
@@ -248,8 +249,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 								}
 							}
 
-							num = new SkinNumber(pn, mn, values[10], values[9], values[13] + 1, str[14].length() > 0 ? values[14] : 2, values[15], values[11]);
-							num.setAlign(values[12]);
+							num = new SkinNumber(pn, mn, values[10], values[9], values[13] + 1, str[14].length() > 0 ? values[14] : 2, values[15], values[11], values[12]);
 						} else {
 							int d = images.length % 10 == 0 ? 10 : 11;
 
@@ -260,9 +260,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 								}
 							}
 
-							num = new SkinNumber(nimages, values[10], values[9], values[13], d > 10 ? 2 : 0, values[15],
-									values[11]);
-							num.setAlign(values[12]);
+							num = new SkinNumber(nimages, values[10], values[9], values[13], d > 10 ? 2 : 0, values[15], values[11], values[12]);
 						}
 						skin.add(num);
 						// System.out.println("Number Added - " +
@@ -335,8 +333,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				if (images != null) {
 					slider = new SkinSlider(images, values[10], values[9], values[11],
 							(int) (values[12] * (values[11] == 1 || values[11] == 3 ? (dstw / srcw) : (dsth / srch))),
-							values[13]);
-					slider.setChangeable(values[14] == 0);
+							values[13], values[14] == 0);
 					skin.add(slider);
 
 					// TODO 固有実装の汎用化
@@ -361,7 +358,6 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 					slider = new SkinSlider(images, values[10], values[9], values[11],
 							(int) (values[12] * (values[11] == 1 || values[11] == 3 ? (dstw / srcw) : (dsth / srch))),
 							values[13], values[15], values[16]);
-					slider.setChangeable(values[14] == 0);
 					skin.add(slider);
 					// System.out.println("Object Added - " +
 					// (part.getTiming()));
@@ -389,13 +385,11 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				int[] values = parseInt(str);
 				int gr = values[2];
 				if (gr >= 100) {
-					bar = new SkinGraph(gr, values[11] + 100);
-					bar.setDirection(values[12]);
+					bar = new SkinGraph(gr, values[11] + 100, values[12]);
 				} else {
 					TextureRegion[] images = getSourceImage(values);
 					if (images != null) {
-						bar = new SkinGraph(images, values[10], values[9],values[11] + 100);
-						bar.setDirection(values[12]);
+						bar = new SkinGraph(images, values[10], values[9],values[11] + 100, values[12]);
 						// System.out.println("Object Added - " +
 						// (part.getTiming()));
 					}
@@ -414,13 +408,11 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				int[] values = parseInt(str);
 				int gr = values[2];
 				if (gr >= 100) {
-					bar = new SkinGraph(gr,values[11],values[13],values[14]);
-					bar.setDirection(values[12]);
+					bar = new SkinGraph(gr,values[11],values[13],values[14], values[12]);
 				} else {
 					TextureRegion[] images = getSourceImage(values);
 					if (images != null) {
-						bar = new SkinGraph(images,values[10], values[9], values[11],values[13],values[14]);
-						bar.setDirection(values[12]);
+						bar = new SkinGraph(images,values[10], values[9], values[11],values[13],values[14], values[12]);
 						// System.out.println("Object Added - " +
 						// (part.getTiming()));
 					}
@@ -435,7 +427,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 			public void execute(String[] str) {
 				if (bar != null) {
 					int[] values = parseInt(str);
-					if (bar.getDirection() == 1) {
+					if (bar.direction == 1) {
 						values[4] += values[6];
 						values[6] = -values[6];
 					}
@@ -485,8 +477,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 							}
 						}
 					}
-					button = new SkinImage(tr, values[10], values[9]);
-					button.setReferenceID(values[11]);
+					button = new SkinImage(tr, values[10], values[9], values[11]);
 					if (values[12] == 1) {
 						button.setClickevent(values[11]);
 						button.setClickeventType(values[14] > 0 ? 0 : values[14] < 0 ? 1 : 2);
@@ -714,117 +705,6 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 				}
 			}
 		});
-		addCommandWord(new CommandWord("DST_PM_CHARA_1P") {
-			@Override
-			public void execute(String[] str) {
-				//プレイ用 判定連動
-				//x,y,w,h,color,offset,folderpath
-				int[] values = parseInt(str);
-				if (values[3] < 0) {
-					values[1] += values[3];
-					values[3] = -values[3];
-				}
-				if (values[4] < 0) {
-					values[2] += values[4];
-					values[4] = -values[4];
-				}
-				final File imagefile = LR2SkinLoader.getPath(skinpath, str[7], filemap);
-				new PomyuCharaLoader(skin).load(usecim, imagefile,
-						0, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
-						values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
-						1, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, values[6]);
-			}
-		});
-		addCommandWord(new CommandWord("DST_PM_CHARA_2P") {
-			@Override
-			public void execute(String[] str) {
-				//プレイ用 判定連動
-				//x,y,w,h,color,offset,folderpath
-				int[] values = parseInt(str);
-				if (values[3] < 0) {
-					values[1] += values[3];
-					values[3] = -values[3];
-				}
-				if (values[4] < 0) {
-					values[2] += values[4];
-					values[4] = -values[4];
-				}
-				final File imagefile = LR2SkinLoader.getPath(skinpath, str[7], filemap);
-				new PomyuCharaLoader(skin).load(usecim, imagefile,
-						0, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
-						values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
-						2, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, values[6]);
-			}
-		});
-		addCommandWord(new CommandWord("DST_PM_CHARA_ANIMATION") {
-			@Override
-			public void execute(String[] str) {
-				//プレイ以外用 判定非連動
-				//x,y,w,h,color,animationtype,timer,op1,op2,op3,offset,folderpath
-				//type 0:NEUTRAL 1:FEVER 2:GREAT 3:GOOD 4:BAD 5:FEVERWIN 6:WIN 7:LOSE 8:OJAMA 9:DANCE
-				int[] values = parseInt(str);
-				if(values[6] >= 0 && values[6] <= 9) {
-					if (values[3] < 0) {
-						values[1] += values[3];
-						values[3] = -values[3];
-					}
-					if (values[4] < 0) {
-						values[2] += values[4];
-						values[4] = -values[4];
-					}
-					final File imagefile = LR2SkinLoader.getPath(skinpath, str[12], filemap);
-					new PomyuCharaLoader(skin).load(usecim, imagefile,
-							values[6] + 6, (values[5] == 1 || values[5] == 2) ? values[5] : 1,
-							values[1] * dstw / srcw, dsth - (values[2] + values[4]) * dsth / srch, values[3] * dstw / srcw, values[4] * dsth / srch,
-							Integer.MIN_VALUE, values[7], values[8], values[9], values[10], values[11]);
-				}
-			}
-		});
-		addCommandWord(new CommandWord("SRC_PM_CHARA_IMAGE") {
-			@Override
-			public void execute(String[] str) {
-				//color,type,folderpath
-				//type 0:キャラ背景 1:名前画像 2:ハリアイ画像(上半身のみ) 3:ハリアイ画像(全体) 4:キャラアイコン
-				PMcharaPart = null;
-				int[] values = parseInt(str);
-				if(values[2] >= 0 && values[2] <= 4) {
-					final File imagefile = LR2SkinLoader.getPath(skinpath, str[3], filemap);
-					PMcharaPart = new PomyuCharaLoader(skin).load(usecim, imagefile,
-							values[2] + 1, (values[1] == 1 || values[1] == 2) ? values[1] : 1,
-							Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE,
-							Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE, Integer.MIN_VALUE);
-				}
-			}
-		});
-		addCommandWord(new CommandWord("DST_PM_CHARA_IMAGE") {
-			@Override
-			public void execute(String[] str) {
-				//DST_IMAGEと同様
-				if (PMcharaPart != null) {
-					int[] values = parseInt(str);
-					if (values[5] < 0) {
-						values[3] += values[5];
-						values[5] = -values[5];
-					}
-					if (values[6] < 0) {
-						values[4] += values[6];
-						values[6] = -values[6];
-					}
-					PMcharaPart.setDestination(values[2], values[3] * dstw / srcw,
-							dsth - (values[4] + values[6]) * dsth / srch, values[5] * dstw / srcw,
-							values[6] * dsth / srch, values[7], values[8], values[9], values[10], values[11],
-							values[12], values[13], values[14], values[15], values[16], values[17], values[18],
-							values[19], values[20], readOffset(str, 21));
-				}
-			}
-		});
-		addCommandWord(new CommandWord("STRETCH") {
-			@Override
-			public void execute(String[] str) {
-				int[] values = parseInt(str);
-				stretch = values[1];
-			}
-		});
 	}
 
 	protected void loadSkin(Skin skin, Path f, MainState state) throws IOException {
@@ -835,39 +715,32 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		this.loadSkin0(skin, f, state, option);
 	}
 
-	private ObjectMap<String, String> filemap = new ObjectMap<String, String>();
-
-	protected S loadSkin(S skin, Path f, MainState state, SkinHeader header, IntIntMap option,
-			ObjectMap<String, Object> property) throws IOException {
+	protected S loadSkin(S skin, MainState state, IntIntMap option) throws IOException {
 		this.skin = skin;
 		this.state = state;
-		for (String key : property.keys()) {
-			if (property.get(key) != null) {
-				if (property.get(key) instanceof Integer) {
-					op.put((Integer) property.get(key), 1);
-				}
-				if (property.get(key) instanceof String) {
-					for (CustomFile file : header.getCustomFiles()) {
-						if (file.name.equals(key)) {
-							filemap.put(file.path, (String) property.get(key));
-							break;
-						}
-					}
-				}
+		mode = skin.header.getSkinType().getMode();
+
+		for (CustomOption opt : skin.header.getCustomOptions()) {
+			int value = opt.getSelectedOption();
+			if(value != OPTION_RANDOM_VALUE) {
+				op.put((Integer) value, 1);
 			}
 		}
-
-		IntMap<SkinConfig.Offset> offset = new IntMap<>();
-		for (CustomOffset of : header.getCustomOffsets()) {
-			final Object o = property.get(of.name);
-			if(o instanceof Offset) {
-				offset.put(of.id, (Offset)o);				
+		for (CustomFile cf : skin.header.getCustomFiles()) {
+			String filename = cf.getSelectedFilename();
+			if(filename != null) {
+				filemap.put(cf.path, filename);
 			}
+		}
+		
+		IntMap<SkinConfig.Offset> offset = new IntMap<>();
+		for (SkinHeader.CustomOffset of : skin.header.getCustomOffsets()) {
+			offset.put(of.id, of.getOffset());
 		}
 		skin.setOffset(offset);
 
 		op.putAll(option);
-		this.loadSkin0(skin, f, state, op);
+		this.loadSkin0(skin, skin.header.getPath(), state, op);
 
 		return skin;
 	}
@@ -975,61 +848,7 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 		return images;
 	}
 
-	public S loadSkin(Path f, MainState state, SkinHeader header, IntIntMap option, SkinConfig.Property property) throws IOException {
-		ObjectMap m = new ObjectMap();
-		for(SkinConfig.Option op : property.getOption()) {
-			if(op.value != OPTION_RANDOM_VALUE) {
-				m.put(op.name, op.value);
-			} else {
-				for (CustomOption opt : header.getCustomOptions()) {
-					if(op.name.equals(opt.name)) {
-						if(header.getRandomSelectedOptions(op.name) >= 0) m.put(op.name, header.getRandomSelectedOptions(op.name));
-					}
-				}
-			}
-		}
-		for(SkinConfig.FilePath file : property.getFile()) {
-			if(!file.path.equals("Random")) {
-				m.put(file.name, file.path);
-			} else {
-				for (CustomFile cf : header.getCustomFiles()) {
-					if(file.name.equals(cf.name)) {
-						String ext = cf.path.substring(cf.path.lastIndexOf("*") + 1);
-						if(cf.path.contains("|")) {
-							if(cf.path.length() > cf.path.lastIndexOf('|') + 1) {
-								ext = cf.path.substring(cf.path.lastIndexOf("*") + 1, cf.path.indexOf('|')) + cf.path.substring(cf.path.lastIndexOf('|') + 1);
-							} else {
-								ext = cf.path.substring(cf.path.lastIndexOf("*") + 1, cf.path.indexOf('|'));
-							}
-						}
-						final int slashindex = cf.path.lastIndexOf('/');
-						File dir = slashindex != -1 ? new File(cf.path.substring(0, slashindex)) : new File(cf.path);
-						if (dir.exists() && dir.isDirectory()) {
-							Array<File> l = new Array<File>();
-							for (File subfile : dir.listFiles()) {
-								if (subfile.getPath().toLowerCase().endsWith(ext)) {
-									l.add(subfile);
-								}
-							}
-							if (l.size > 0) {
-								String filename = l.get((int) (Math.random() * l.size)).getName();
-								m.put(file.name, filename);
-							}
-						}
-					}
-				}
-			}
-		}
-		for(SkinConfig.Offset offset : property.getOffset()) {
-			m.put(offset.name, offset);
-		}
-
-		mode = header.getSkinType().getMode();
-
-		return loadSkin(f, state, header, option, m);
-	}
-
-	public abstract S loadSkin(Path f, MainState state, SkinHeader header, IntIntMap option, ObjectMap property) throws IOException;
+	public abstract S loadSkin(MainState state, SkinHeader header, IntIntMap option) throws IOException;
 
 	/**
 	 * SkinTypeに対応したLR2SkinCSVLoaderを返す
@@ -1064,23 +883,28 @@ public abstract class LR2SkinCSVLoader<S extends Skin> extends LR2SkinLoader {
 }
 
 enum CSVCommand implements LR2SkinLoader.Command<LR2SkinCSVLoader> {
-	STARTINPUT {
-		@Override
-		public void execute(LR2SkinCSVLoader loader, String[] str) {
-			loader.skin.setInput(Integer.parseInt(str[1]));
-		}
-	},
-	SCENETIME {
-		@Override
-		public void execute(LR2SkinCSVLoader loader, String[] str) {
-			loader.skin.setScene(Integer.parseInt(str[1]));
-		}
-	},
-	FADEOUT {
-		@Override
-		public void execute(LR2SkinCSVLoader loader, String[] str) {
-			loader.skin.setFadeout(Integer.parseInt(str[1]));
-		}
-	}
+	STARTINPUT ((loader, str) -> {
+		loader.skin.setInput(Integer.parseInt(str[1]));
+	}),
+	SCENETIME ((loader, str) -> {
+		loader.skin.setScene(Integer.parseInt(str[1]));
+	}),
+	FADEOUT ((loader, str) -> {
+		loader.skin.setFadeout(Integer.parseInt(str[1]));
+	}),
+	STRETCH ((loader, str) -> {
+		loader.stretch = Integer.parseInt(str[1]);
+	})
 	;
+	
+	public final BiConsumer<LR2SkinCSVLoader, String[]> function;
+	
+	private CSVCommand(BiConsumer<LR2SkinCSVLoader, String[]> function) {
+		this.function = function;
+	}
+	
+	public void execute(LR2SkinCSVLoader loader, String[] str) {
+		function.accept(loader, str);
+	}
+
 }

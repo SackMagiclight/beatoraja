@@ -16,32 +16,16 @@ import com.badlogic.gdx.Input.Keys;
  */
 public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements InputProcessor {
 
+	public static final int MASK_SHIFT = 1 << 0;
+	public static final int MASK_CTRL = 1 << 1;
+	public static final int MASK_ALT = 1 << 2;
+
 	private int[] keys = new int[] { Keys.Z, Keys.S, Keys.X, Keys.D, Keys.C, Keys.F, Keys.V, Keys.SHIFT_LEFT,
 			Keys.CONTROL_LEFT, Keys.COMMA, Keys.L, Keys.PERIOD, Keys.SEMICOLON, Keys.SLASH, Keys.APOSTROPHE,
 			Keys.BACKSLASH, Keys.SHIFT_RIGHT, Keys.CONTROL_RIGHT };
 	private int[] control = new int[] { Keys.Q, Keys.W };
-	/**
-	 * 数字
-	 */
-	private final int[] numbers = new int[] { Keys.NUM_0, Keys.NUM_1, Keys.NUM_2, Keys.NUM_3, Keys.NUM_4, Keys.NUM_5,
-			Keys.NUM_6, Keys.NUM_7, Keys.NUM_8, Keys.NUM_9 };
-	/**
-	 * カーソル
-	 */
-	private final int[] cover = new int[] { Keys.UP, Keys.DOWN, Keys.LEFT, Keys.RIGHT };
-	/**
-	 * 機能
-	 */
-	private final int[] function = new int[] { Keys.F1, Keys.F2, Keys.F3, Keys.F4, Keys.F5, Keys.F6, Keys.F7, Keys.F8,
-			Keys.F9, Keys.F10, Keys.F11, Keys.F12 };
-	/**
-	 * 終了キー
-	 */
-	private int exit = Keys.ESCAPE;
 
-	private int enter = Keys.ENTER;
-
-	private int delete = Keys.FORWARD_DEL;
+	private MouseScratchInput mouseScratchInput;
 
 	private final IntArray reserved;
 	/**
@@ -49,7 +33,7 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 	 */
 	private int lastPressedKey = -1;
 
-	private boolean enable = true;
+	private boolean textmode = false;
 
 	/**
 	 * 画面の解像度。マウスの入力イベント処理で使用
@@ -59,33 +43,37 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 	/**
 	 * 各キーのon/off状態
 	 */
-	private boolean[] keystate = new boolean[256];
+	private final boolean[] keystate = new boolean[256];
 	/**
 	 * 各キーの状態変化時間
 	 */
-	private long[] keytime = new long[256];
+	private final long[] keytime = new long[256];
 	/**
-	 * キーの最少入力感覚
+	 * 各キーが最後に押されたときで押されてる修飾キー
+	 */
+	private final int[] keymodifiers = new int[256];
+	/**
+	 * キーの最少入力間隔(ms)
 	 */
 	private int duration;
 
 	public KeyBoardInputProcesseor(BMSPlayerInputProcessor bmsPlayerInputProcessor, KeyboardConfig config, Resolution resolution) {
 		super(bmsPlayerInputProcessor, Type.KEYBOARD);
+		this.mouseScratchInput = new MouseScratchInput(bmsPlayerInputProcessor, this, config);
 		this.setConfig(config);
 		this.resolution = resolution;
 		
 		reserved = new IntArray();
-		reserved.addAll(cover);
-		reserved.addAll(function);
-		reserved.addAll(numbers);
-		reserved.addAll(exit);
-		reserved.addAll(enter);
+		Arrays.stream(ControlKeys.values()).forEach(keys -> reserved.add(keys.keycode));
+		
+		Arrays.fill(keytime, Long.MIN_VALUE);
 	}
 
 	public void setConfig(KeyboardConfig config) {
 		this.keys = config.getKeyAssign().clone();
 		this.duration = config.getDuration();
 		this.control = new int[] { config.getStart(), config.getSelect() };
+		mouseScratchInput.setConfig(config);
 	}
 
 	public boolean keyDown(int keycode) {
@@ -103,48 +91,23 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 
 	public void clear() {
 		// Arrays.fill(keystate, false);
-		Arrays.fill(keytime, -duration);
+		Arrays.fill(keytime, Long.MIN_VALUE);
 		lastPressedKey = -1;
+		mouseScratchInput.clear();
 	}
 
-	public void poll(final long presstime) {
-		if (enable) {
+	public void poll(final long microtime) {
+		if (!textmode) {
 			for (int i = 0; i < keys.length; i++) {
 				if(keys[i] < 0) {
 					continue;
 				}
 				final boolean pressed = Gdx.input.isKeyPressed(keys[i]);
-				if (pressed != keystate[keys[i]] && presstime >= keytime[keys[i]] + duration) {
+				if (pressed != keystate[keys[i]] && microtime >= keytime[keys[i]] + duration * 1000) {
 					keystate[keys[i]] = pressed;
-					keytime[keys[i]] = presstime;
-					this.bmsPlayerInputProcessor.keyChanged(this, presstime, i, pressed);
-				}
-			}
-
-			for (int i = 0; i < cover.length; i++) {
-				final boolean pressed = Gdx.input.isKeyPressed(cover[i]);
-				if (pressed != keystate[cover[i]]) {
-					keystate[cover[i]] = pressed;
-					this.bmsPlayerInputProcessor.cursor[i] = pressed;
-					this.bmsPlayerInputProcessor.cursortime[i] = presstime;
-				}
-			}
-
-			for (int i = 0; i < numbers.length; i++) {
-				final boolean pressed = Gdx.input.isKeyPressed(numbers[i]);
-				if (pressed != keystate[numbers[i]]) {
-					keystate[numbers[i]] = pressed;
-					this.bmsPlayerInputProcessor.numberstate[i] = pressed;
-					this.bmsPlayerInputProcessor.numtime[i] = presstime;
-				}
-			}
-
-			for (int i = 0; i < function.length; i++) {
-				final boolean pressed = Gdx.input.isKeyPressed(function[i]);
-				if (pressed != keystate[function[i]]) {
-					keystate[function[i]] = pressed;
-					this.bmsPlayerInputProcessor.functionstate[i] = pressed;
-					this.bmsPlayerInputProcessor.functiontime[i] = presstime;
+					keytime[keys[i]] = microtime;
+					this.bmsPlayerInputProcessor.keyChanged(this, microtime, i, pressed);
+					this.bmsPlayerInputProcessor.setAnalogState(i, false, 0);
 				}
 			}
 
@@ -159,21 +122,54 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 				this.bmsPlayerInputProcessor.setSelectPressed(selectpressed);
 			}
 		}
-		final boolean exitpressed = Gdx.input.isKeyPressed(exit);
-		if (exitpressed != keystate[exit]) {
-			keystate[exit] = exitpressed;
-			this.bmsPlayerInputProcessor.setExitPressed(exitpressed);
+		
+		for (ControlKeys key : ControlKeys.values()) {
+			final boolean pressed = Gdx.input.isKeyPressed(key.keycode);
+			if (!(textmode && key.text) && pressed != keystate[key.keycode]) {
+				keystate[key.keycode] = pressed;
+				keytime[key.keycode] = microtime;
+				keymodifiers[key.keycode] = pressed ? currentlyHeldModifiers() : 0;
+			}
 		}
-		final boolean enterpressed = Gdx.input.isKeyPressed(enter);
-		if (enterpressed != keystate[enter]) {
-			keystate[enter] = enterpressed;
-			this.bmsPlayerInputProcessor.setEnterPressed(enterpressed);
+		
+		mouseScratchInput.poll(microtime);
+	}
+
+	private int currentlyHeldModifiers() {
+		boolean shift = Gdx.input.isKeyPressed(Keys.SHIFT_LEFT) || Gdx.input.isKeyPressed(Keys.SHIFT_RIGHT);
+		boolean ctrl = Gdx.input.isKeyPressed(Keys.CONTROL_LEFT) || Gdx.input.isKeyPressed(Keys.CONTROL_RIGHT);
+		boolean alt = Gdx.input.isKeyPressed(Keys.ALT_LEFT) || Gdx.input.isKeyPressed(Keys.ALT_RIGHT);
+		return (shift ? MASK_SHIFT : 0) | (ctrl ? MASK_CTRL : 0) | (alt ? MASK_ALT : 0);
+	}
+
+
+	public boolean getKeyState(int keycode) {
+		return keystate[keycode];
+	}
+	
+	protected void setKeyState(int keycode, boolean pressed) {
+		keystate[keycode] = pressed;
+	}
+
+	public boolean isKeyPressed(int keycode) {
+		if(keystate[keycode] && keytime[keycode] != Long.MIN_VALUE) {
+			keytime[keycode] = Long.MIN_VALUE;
+			return true;
 		}
-		final boolean deletepressed = Gdx.input.isKeyPressed(delete);
-		if (deletepressed != keystate[delete]) {
-			keystate[delete] = deletepressed;
-			this.bmsPlayerInputProcessor.setDeletePressed(deletepressed);
+		return false;
+	}
+
+	public boolean isKeyPressed(int keycode, int heldModifiers, int... notHeldModifiers) {
+		if(keystate[keycode] && keytime[keycode] != Long.MIN_VALUE) {
+			int modifiers = keymodifiers[keycode];
+			if ((modifiers & heldModifiers) != heldModifiers) return false;
+			for (int i = 0; i < notHeldModifiers.length; i++) {
+				if ((modifiers & notHeldModifiers[i]) == notHeldModifiers[i]) return false;
+			}
+			keytime[keycode] = Long.MIN_VALUE;
+			return true;
 		}
+		return false;
 	}
 
 	public boolean mouseMoved(int x, int y) {
@@ -183,8 +179,17 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 		return false;
 	}
 
+	/**
+	 * 旧InputProcessorのメソッド
+	 * libGDX更新時に削除
+	 */
 	public boolean scrolled(int amount) {
-		this.bmsPlayerInputProcessor.scroll -= amount;
+		return scrolled(0, amount);
+	}
+
+	public boolean scrolled(float amountX, float amountY) {
+		this.bmsPlayerInputProcessor.scrollX += amountX;
+		this.bmsPlayerInputProcessor.scrollY += amountY;
 		return false;
 	}
 
@@ -217,11 +222,64 @@ public class KeyBoardInputProcesseor extends BMSPlayerInputDevice implements Inp
 		this.lastPressedKey = lastPressedKey;
 	}
 
-	public void setEnable(boolean enable) {
-		this.enable = enable;
+	public MouseScratchInput getMouseScratchInput() {
+		return mouseScratchInput;
+	}
+
+	public void setTextInputMode(boolean textmode) {
+		this.textmode = textmode;
 	}
 	
 	public boolean isReservedKey(int key) {
 		return reserved.contains(key);
 	}
+	
+	public enum ControlKeys {
+		NUM0(0, Keys.NUM_0, true),
+		NUM1(1, Keys.NUM_1, true),
+		NUM2(2, Keys.NUM_2, true),
+		NUM3(3, Keys.NUM_3, true),
+		NUM4(4, Keys.NUM_4, true),
+		NUM5(5, Keys.NUM_5, true),
+		NUM6(6, Keys.NUM_6, true),
+		NUM7(7, Keys.NUM_7, true),
+		NUM8(8, Keys.NUM_8, true),
+		NUM9(9, Keys.NUM_9, true),
+		
+		F1(10, Keys.F1, false),
+		F2(11, Keys.F2, false),
+		F3(12, Keys.F3, false),
+		F4(13, Keys.F4, false),
+		F5(14, Keys.F5, false),
+		F6(15, Keys.F6, false),
+		F7(16, Keys.F7, false),
+		F8(17, Keys.F8, false),
+		F9(18, Keys.F9, false),
+		F10(19, Keys.F10, false),
+		F11(20, Keys.F11, false),
+		F12(21, Keys.F12, false),
+		
+		UP(22, Keys.UP, false),
+		DOWN(23, Keys.DOWN, false),
+		LEFT(24, Keys.LEFT, false),
+		RIGHT(25, Keys.RIGHT, false),
+		
+		ENTER(26, Keys.ENTER, false),
+		DEL(27, Keys.FORWARD_DEL, false),
+		ESCAPE(28, Keys.ESCAPE, false),
+		;
+		
+		public final int id;
+		
+		public final int keycode;
+		
+		public final boolean text;
+		
+		private ControlKeys(int id, int keycode, boolean text) {
+			this.id = id;
+			this.keycode = keycode;
+			this.text = text;
+		}
+	}
+
 }

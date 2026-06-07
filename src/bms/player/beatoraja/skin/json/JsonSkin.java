@@ -8,6 +8,7 @@ public class JsonSkin {
 
 		public int type = -1;
 		public String name;
+		public String author;
 		public int w = 1280;
 		public int h = 720;
 		public int fadeout;
@@ -19,6 +20,7 @@ public class JsonSkin {
 		public int judgetimer = 1;
 		public int finishmargin = 0;
 
+		public Category[] category = new Category[0];
 		public Property[] property = new Property[0];
 		public Filepath[] filepath = new Filepath[0];
 		public Offset[] offset = new Offset[0];
@@ -27,12 +29,14 @@ public class JsonSkin {
 		public Image[] image = new Image[0];
 		public ImageSet[] imageset = new ImageSet[0];
 		public Value[] value = new Value[0];
+		public FloatValue[] floatvalue = new FloatValue[0];
 		public Text[] text = new Text[0];
 		public Slider[] slider = new Slider[0];
 		public Graph[] graph = new Graph[0];
 		public GaugeGraph[] gaugegraph = new GaugeGraph[0];
 		public JudgeGraph[] judgegraph = new JudgeGraph[0];
 		public BPMGraph[] bpmgraph = new BPMGraph[0];
+		public HitErrorVisualizer[] hiterrorvisualizer = new HitErrorVisualizer[0];
 		public TimingVisualizer[] timingvisualizer = new TimingVisualizer[0];
 		public TimingDistributionGraph[] timingdistributiongraph = new TimingDistributionGraph[0];
 		public NoteSet note;
@@ -49,8 +53,9 @@ public class JsonSkin {
 
 		public Destination[] destination;
 	}
-
+	
 	public static class Property {
+		public String category;
 		public String name;
 		public PropertyItem[] item = new PropertyItem[0];
 		public String def;
@@ -62,12 +67,14 @@ public class JsonSkin {
 	}
 
 	public static class Filepath {
+		public String category;
 		public String name;
 		public String path;
 		public String def;
 	}
 
 	public static class Offset {
+		public String category;
 		public String name;
 		public int id;
 		public boolean x;
@@ -76,6 +83,11 @@ public class JsonSkin {
 		public boolean h;
 		public boolean r;
 		public boolean a;
+	}
+
+	public static class Category {
+		public String name;
+		public String[] item = new String[0];
 	}
 
 	public static class Source {
@@ -133,6 +145,30 @@ public class JsonSkin {
 		public int space;
 		public int ref;
 		public IntegerProperty value;
+		public Value[] offset;
+	}
+
+	public static class FloatValue {
+		public String id;
+		public String src;
+		public int x;
+		public int y;
+		public int w;
+		public int h;
+		public int divx = 1;
+		public int divy = 1;
+		public TimerProperty timer;
+		public int cycle;
+		public int align;
+		public int fketa;
+		public int iketa;
+		public float gain = 1.0f;
+		public boolean isSignvisible;
+		public int padding;
+		public int zeropadding;
+		public int space;
+		public int ref;
+		public FloatProperty value;
 		public Value[] offset;
 	}
 
@@ -221,6 +257,7 @@ public class JsonSkin {
 		public int delay = 500;
 		public int orderReverse = 0;
 		public int noGap = 0;
+		public int noGapX = 0;
 	}
 
 	public static class BPMGraph {
@@ -233,6 +270,28 @@ public class JsonSkin {
 		public String otherBPMColor = "ffff00";
 		public String stopLineColor = "ff00ff";
 		public String transitionLineColor = "7f7f7f";
+	}
+
+	public static class HitErrorVisualizer {
+		public String id;
+		public int width = 301;
+		public int judgeWidthMillis = 150;
+		public int lineWidth = 1;
+		public int colorMode = 1;
+		public int hiterrorMode = 1;
+		public int emaMode = 1;
+		public String lineColor = "99CCFF80";
+		public String centerColor = "FFFFFFFF";
+		public String PGColor = "99CCFF80";
+		public String GRColor = "F2CB3080";
+		public String GDColor = "14CC8f80";
+		public String BDColor = "FF1AB380";
+		public String PRColor = "CC292980";
+		public String emaColor = "FF0000FF";
+		public float alpha = 0.1f;
+		public int windowLength = 30;
+		public int transparent = 0;
+		public int drawDecay = 1;
 	}
 
 	public static class TimingVisualizer {
@@ -273,13 +332,17 @@ public class JsonSkin {
 		public String[] lnstart = new String[0];
 		public String[] lnend = new String[0];
 		public String[] lnbody = new String[0];
+		public String[] lnbodyActive = new String[0];
 		public String[] lnactive = new String[0];
 		public String[] hcnstart = new String[0];
 		public String[] hcnend = new String[0];
 		public String[] hcnbody = new String[0];
 		public String[] hcnactive = new String[0];
+		public String[] hcnbodyActive = new String[0];
 		public String[] hcndamage = new String[0];
+		public String[] hcnbodyMiss = new String[0];
 		public String[] hcnreactive = new String[0];
+		public String[] hcnbodyReactive = new String[0];
 		public String[] mine = new String[0];
 		public String[] hidden = new String[0];
 		public String[] processed = new String[0];

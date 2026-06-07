@@ -1,8 +1,6 @@
 package bms.player.beatoraja;
 
-import java.awt.*;
 import java.io.*;
-import java.net.URI;
 import java.net.URL;
 import java.nio.file.*;
 import java.util.*;
@@ -11,14 +9,11 @@ import java.util.logging.Logger;
 
 import javax.swing.JOptionPane;
 
-import com.badlogic.gdx.Gdx;
+import com.badlogic.gdx.ApplicationListener;
 import com.badlogic.gdx.Graphics;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import javafx.application.Application;
-import javafx.application.Platform;
-import javafx.event.ActionEvent;
-import javafx.event.EventHandler;
 import javafx.fxml.FXMLLoader;
 import javafx.scene.Scene;
 import javafx.scene.layout.VBox;
@@ -26,12 +21,13 @@ import javafx.scene.layout.VBox;
 import com.badlogic.gdx.backends.lwjgl.LwjglApplication;
 import com.badlogic.gdx.backends.lwjgl.LwjglApplicationConfiguration;
 
-import bms.player.beatoraja.PlayerResource.PlayMode;
+import bms.player.beatoraja.AudioConfig.DriverType;
 import bms.player.beatoraja.ir.IRConnectionManager;
 import bms.player.beatoraja.launcher.PlayConfigurationView;
 import bms.player.beatoraja.song.SQLiteSongDatabaseAccessor;
+import bms.player.beatoraja.song.SongData;
 import bms.player.beatoraja.song.SongDatabaseAccessor;
-import bms.player.beatoraja.song.SongInformationAccessor;
+import bms.player.beatoraja.song.SongUtils;
 
 /**
  * 起動用クラス
@@ -39,19 +35,19 @@ import bms.player.beatoraja.song.SongInformationAccessor;
  * @author exch
  */
 public class MainLoader extends Application {
-	
+
 	private static final boolean ALLOWS_32BIT_JAVA = false;
-	
+
 	private static SongDatabaseAccessor songdb;
-	
+
 	private static final Set<String> illegalSongs = new HashSet<String>();
 
 	private static Path bmsPath;
 
 	private static VersionChecker version;
-	
+
 	public static void main(String[] args) {
-		
+
 		if(!ALLOWS_32BIT_JAVA && !System.getProperty( "os.arch" ).contains( "64")) {
 			JOptionPane.showMessageDialog(null, "This Application needs 64bit-Java.", "Error", JOptionPane.ERROR_MESSAGE);
 			System.exit(1);
@@ -64,58 +60,63 @@ public class MainLoader extends Application {
 			e.printStackTrace();
 		}
 
-		PlayMode auto = null;
+		BMSPlayerMode auto = null;
 		for (String s : args) {
 			if (s.startsWith("-")) {
 				if (s.equals("-a")) {
-					auto = PlayMode.AUTOPLAY;
+					auto = BMSPlayerMode.AUTOPLAY;
 				}
 				if (s.equals("-p")) {
-					auto = PlayMode.PRACTICE;
+					auto = BMSPlayerMode.PRACTICE;
 				}
 				if (s.equals("-r") || s.equals("-r1")) {
-					auto = PlayMode.REPLAY_1;
+					auto = BMSPlayerMode.REPLAY_1;
 				}
 				if (s.equals("-r2")) {
-					auto = PlayMode.REPLAY_2;
+					auto = BMSPlayerMode.REPLAY_2;
 				}
 				if (s.equals("-r3")) {
-					auto = PlayMode.REPLAY_3;
+					auto = BMSPlayerMode.REPLAY_3;
 				}
 				if (s.equals("-r4")) {
-					auto = PlayMode.REPLAY_4;
+					auto = BMSPlayerMode.REPLAY_4;
 				}
 				if (s.equals("-s")) {
-					auto = PlayMode.PLAY;
+					auto = BMSPlayerMode.PLAY;
 				}
 			} else {
 				bmsPath = Paths.get(s);
 				if(auto == null) {
-					auto = PlayMode.PLAY;
+					auto = BMSPlayerMode.PLAY;
 				}
 			}
 		}
-		
-		if(Files.exists(MainController.configpath) && (bmsPath != null || auto != null)) {
+
+
+
+		if (Files.exists(Config.configpath) && (bmsPath != null || auto != null)) {
 			IRConnectionManager.getAllAvailableIRConnectionName();
 			play(bmsPath, auto, true, null, null, bmsPath != null);
 		} else {
-			launch(args);			
+			launch(args);
 		}
 	}
 
-	public static void play(Path f, PlayMode auto, boolean forceExit, Config config, PlayerConfig player, boolean songUpdated) {
+	public static void play(Path f, BMSPlayerMode auto, boolean forceExit, Config config, PlayerConfig player, boolean songUpdated) {
 		if(config == null) {
-			config = Config.read();			
+			config = Config.read();
 		}
-		
+
+		for(SongData song : getScoreDatabaseAccessor().getSongDatas(SongUtils.illegalsongs)) {
+			MainLoader.putIllegalSong(song.getSha256());
+		}
 		if(illegalSongs.size() > 0) {
 			JOptionPane.showMessageDialog(null, "This Application detects " + illegalSongs.size() + " illegal BMS songs. \n Remove them, update song database and restart.", "Error", JOptionPane.ERROR_MESSAGE);
 			System.exit(1);
 		}
 
 		try {
-			MainController main = new MainController(f, config, player, auto, songUpdated);
+			final MainController main = new MainController(f, config, player, auto, songUpdated);
 
 			LwjglApplicationConfiguration cfg = new LwjglApplicationConfiguration();
 			cfg.width = config.getResolution().width;
@@ -138,17 +139,42 @@ public class MainLoader extends Application {
 			cfg.vSyncEnabled = config.isVsync();
 			cfg.backgroundFPS = config.getMaxFramePerSecond();
 			cfg.foregroundFPS = config.getMaxFramePerSecond();
-			cfg.title = MainController.VERSION;
-			
-			cfg.audioDeviceBufferSize = config.getAudioDeviceBufferSize();
-			cfg.audioDeviceSimultaneousSources = config.getAudioDeviceSimultaneousSources();
+			cfg.title = MainController.getVersion();
+
+			cfg.audioDeviceBufferSize = config.getAudioConfig().getDeviceBufferSize();
+			cfg.audioDeviceSimultaneousSources = config.getAudioConfig().getDeviceSimultaneousSources();
 			cfg.forceExit = forceExit;
-			if(config.getAudioDriver() != Config.AUDIODRIVER_SOUND && config.getAudioDriver() != Config.AUDIODRIVER_AUDIODEVICE) {
-				LwjglApplicationConfiguration.disableAudio = true;				
+			if(config.getAudioConfig().getDriver() != DriverType.OpenAL) {
+				LwjglApplicationConfiguration.disableAudio = true;
 			}
 			// System.setProperty("org.lwjgl.opengl.Display.allowSoftwareOpenGL",
 			// "true");
-			new LwjglApplication(main, cfg);
+			new LwjglApplication(new ApplicationListener() {
+				
+				public void resume() {
+					main.resume();
+				}
+				
+				public void resize(int width, int height) {
+					main.resize(width, height);
+				}
+				
+				public void render() {
+					main.render();
+				}
+				
+				public void pause() {
+					main.pause();
+				}
+				
+				public void dispose() {
+					main.dispose();
+				}
+				
+				public void create() {
+					main.create();
+				}
+			}, cfg);
 
 //			Lwjgl3ApplicationConfiguration cfg = new Lwjgl3ApplicationConfiguration();
 //
@@ -194,13 +220,13 @@ public class MainLoader extends Application {
 	public static Graphics.DisplayMode getDesktopDisplayMode() {
 		return LwjglApplicationConfiguration.getDesktopDisplayMode();
 	}
-	
+
 	public static SongDatabaseAccessor getScoreDatabaseAccessor() {
 		if(songdb == null) {
 			try {
 				Config config = Config.read();
 				Class.forName("org.sqlite.JDBC");
-				songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(), config.getBmsroot());			
+				songdb = new SQLiteSongDatabaseAccessor(config.getSongpath(), config.getBmsroot());
 			} catch (ClassNotFoundException e) {
 				e.printStackTrace();
 			}
@@ -228,15 +254,15 @@ public class MainLoader extends Application {
 	public static void putIllegalSong(String hash) {
 		illegalSongs.add(hash);
 	}
-	
+
 	public static String[] getIllegalSongs() {
 		return illegalSongs.toArray(new String[illegalSongs.size()]);
 	}
-	
+
 	public static int getIllegalSongCount() {
 		return illegalSongs.size();
 	}
-	
+
 	@Override
 	public void start(javafx.stage.Stage primaryStage) throws Exception {
 		Config config = Config.read();
@@ -252,7 +278,7 @@ public class MainLoader extends Application {
 			bmsinfo.update(config);
 			Scene scene = new Scene(stackPane, stackPane.getPrefWidth(), stackPane.getPrefHeight());
 			primaryStage.setScene(scene);
-			primaryStage.setTitle(MainController.VERSION + " configuration");
+			primaryStage.setTitle(MainController.getVersion() + " configuration");
 			primaryStage.setOnCloseRequest((event) -> {
 				bmsinfo.exit();
 			});
@@ -295,7 +321,7 @@ public class MainLoader extends Application {
 				ObjectMapper mapper = new ObjectMapper();
 				GithubLastestRelease lastestData = mapper.readValue(url, GithubLastestRelease.class);
 				final String name = lastestData.name;
-				if (MainController.VERSION.contains(name)) {
+				if (MainController.getVersion().contains(name)) {
 					message = "最新版を利用中です";
 				} else {
 					message = String.format("最新版[%s]を利用可能です。", name);

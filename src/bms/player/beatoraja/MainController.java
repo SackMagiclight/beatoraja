@@ -1,12 +1,9 @@
 package bms.player.beatoraja;
 
-import java.io.*;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.*;
 import java.util.logging.Logger;
-import java.util.stream.Stream;
 
 import org.lwjgl.input.Mouse;
 
@@ -19,9 +16,9 @@ import com.badlogic.gdx.scenes.scene2d.Stage;
 import com.badlogic.gdx.utils.*;
 import com.badlogic.gdx.utils.StringBuilder;
 
+import bms.player.beatoraja.AudioConfig.DriverType;
 import bms.player.beatoraja.MainState.MainStateType;
 import bms.player.beatoraja.MessageRenderer.Message;
-import bms.player.beatoraja.PlayerResource.PlayMode;
 import bms.player.beatoraja.audio.*;
 import bms.player.beatoraja.config.KeyConfiguration;
 import bms.player.beatoraja.config.SkinConfiguration;
@@ -40,6 +37,7 @@ import bms.player.beatoraja.skin.SkinLoader;
 import bms.player.beatoraja.skin.SkinObject.SkinOffset;
 import bms.player.beatoraja.skin.SkinProperty;
 import bms.player.beatoraja.song.*;
+import bms.player.beatoraja.stream.StreamController;
 import bms.tool.mdprocessor.MusicDownloadProcessor;
 
 /**
@@ -47,11 +45,12 @@ import bms.tool.mdprocessor.MusicDownloadProcessor;
  *
  * @author exch
  */
-public class MainController extends ApplicationAdapter {
+public class MainController {
 
-	public static final String VERSION = "beatoraja 0.7.4";
+	private static final String VERSION = "beatoraja 0.8.7";
 
 	public static final boolean debug = false;
+	public static final int debugTextXpos = 10;
 
 	/**
 	 * 起動時間
@@ -72,25 +71,25 @@ public class MainController extends ApplicationAdapter {
 
 	private PlayerResource resource;
 
-	private FreeTypeFontGenerator generator;
 	private BitmapFont systemfont;
 	private MessageRenderer messageRenderer;
 
 	private MainState current;
-	/**
-	 * 状態の開始時間
-	 */
-	private long starttime;
-	private long nowmicrotime;
+	
+	private TimerManager timer;
 
 	private Config config;
 	private PlayerConfig player;
-	private PlayMode auto;
+	private BMSPlayerMode auto;
 	private boolean songUpdated;
 
 	private SongInformationAccessor infodb;
 
 	private IRStatus[] ir;
+
+	private RivalDataAccessor rivals = new RivalDataAccessor();
+
+	private RankingDataCache ircache = new RankingDataCache();
 
 	private SpriteBatch sprite;
 	/**
@@ -108,23 +107,23 @@ public class MainController extends ApplicationAdapter {
 	 */
 	private PlayDataAccessor playdata;
 
-	static final Path configpath = Paths.get("config.json");
-
 	private SystemSoundManager sound;
 
 	private Thread screenshot;
 
 	private MusicDownloadProcessor download;
+	
+	private StreamController streamController;
 
-	public static final int timerCount = SkinProperty.TIMER_MAX + 1;
-	private final long[] timer = new long[timerCount];
 	public static final int offsetCount = SkinProperty.OFFSET_MAX + 1;
 	private final SkinOffset[] offset = new SkinOffset[offsetCount];
 
 	protected TextureRegion black;
 	protected TextureRegion white;
 
-	public MainController(Path f, Config config, PlayerConfig player, PlayMode auto, boolean songUpdated) {
+	private final Array<MainStateListener> stateListener = new Array<MainStateListener>();
+
+	public MainController(Path f, Config config, PlayerConfig player, BMSPlayerMode auto, boolean songUpdated) {
 		this.auto = auto;
 		this.config = config;
 		this.songUpdated = songUpdated;
@@ -163,37 +162,41 @@ public class MainController extends ApplicationAdapter {
 
 		Array<IRStatus> irarray = new Array<IRStatus>();
 		for(IRConfig irconfig : player.getIrconfig()) {
-			IRConnection ir = IRConnectionManager.getIRConnection(irconfig.getIrname());
+			final IRConnection ir = IRConnectionManager.getIRConnection(irconfig.getIrname());
 			if(ir != null) {
 				if(irconfig.getUserid().length() == 0 || irconfig.getPassword().length() == 0) {
-					ir = null;
 				} else {
-					IRResponse response = ir.login(irconfig.getUserid(), irconfig.getPassword());
-					if(!response.isSucceeded()) {
+					IRResponse<IRPlayerData> response = ir.login(new IRAccount(irconfig.getUserid(), irconfig.getPassword(), ""));
+					if(response.isSucceeded()) {
+						irarray.add(new IRStatus(irconfig, ir, response.getData()));
+					} else {
 						Logger.getGlobal().warning("IRへのログイン失敗 : " + response.getMessage());
-						ir = null;
 					}
 				}
 			}
-			
-			if(ir != null) {
-				irarray.add(new IRStatus(irconfig, ir));
-			}
+
 		}
 		ir = irarray.toArray(IRStatus.class);
 		
-		switch(config.getAudioDriver()) {
-		case Config.AUDIODRIVER_PORTAUDIO:
+		rivals.update(this);
+
+		switch(config.getAudioConfig().getDriver()) {
+		case PortAudio:
 			try {
 				audio = new PortAudioDriver(config);
 			} catch(Throwable e) {
 				e.printStackTrace();
-				config.setAudioDriver(Config.AUDIODRIVER_SOUND);
+				config.getAudioConfig().setDriver(DriverType.OpenAL);
 			}
 			break;
 		}
 
-		sound = new SystemSoundManager(config);
+		timer = new TimerManager();
+		sound = new SystemSoundManager(this);
+		
+		if(config.isUseDiscordRPC()) {
+			stateListener.add(new DiscordListener());
+		}
 	}
 
 	public SkinOffset getOffset(int index) {
@@ -210,6 +213,14 @@ public class MainController extends ApplicationAdapter {
 
 	public PlayDataAccessor getPlayDataAccessor() {
 		return playdata;
+	}
+	
+	public RivalDataAccessor getRivalDataAccessor() {
+		return rivals;
+	}
+	
+	public RankingDataCache getRankingDataCache() {
+		return ircache;
 	}
 
 	public SpriteBatch getSpriteBatch() {
@@ -263,18 +274,18 @@ public class MainController extends ApplicationAdapter {
 		}
 
 		if (newState != null && current != newState) {
-			Arrays.fill(timer, Long.MIN_VALUE);
 			if(current != null) {
+				current.shutdown();
 				current.setSkin(null);
 			}
 			newState.create();
 			if(newState.getSkin() != null) {
-				newState.getSkin().prepare(newState);				
+				newState.getSkin().prepare(newState);
 			}
 			current = newState;
-			starttime = System.nanoTime();
-			nowmicrotime = ((System.nanoTime() - starttime) / 1000);
+			timer.setMainState(newState);
 			current.prepare();
+			updateMainStateListener(0);
 		}
 		if (current.getStage() != null) {
 			Gdx.input.setInputProcessor(new InputMultiplexer(current.getStage(), input.getKeyBoardInputProcesseor()));
@@ -282,44 +293,48 @@ public class MainController extends ApplicationAdapter {
 			Gdx.input.setInputProcessor(input.getKeyBoardInputProcesseor());
 		}
 	}
-	
+
 	public MainState getCurrentState() {
 		return current;
 	}
 
-	public void setPlayMode(PlayMode auto) {
+	public void setPlayMode(BMSPlayerMode auto) {
 		this.auto = auto;
 
 	}
 
-	@Override
 	public void create() {
 		final long t = System.currentTimeMillis();
 		sprite = new SpriteBatch();
 		SkinLoader.initPixmapResourcePool(config.getSkinPixmapGen());
 
 		try {
-			generator = new FreeTypeFontGenerator(Gdx.files.internal("skin/default/VL-Gothic-Regular.ttf"));
+			FreeTypeFontGenerator generator = new FreeTypeFontGenerator(Gdx.files.internal(config.getSystemfontpath()));
 			FreeTypeFontParameter parameter = new FreeTypeFontParameter();
 			parameter.size = 24;
-			systemfont = generator.generateFont(parameter);			
+			systemfont = generator.generateFont(parameter);
+			generator.dispose();
 		} catch (GdxRuntimeException e) {
-			Logger.getGlobal().severe("System Font１読み込み失敗");
+			Logger.getGlobal().severe("System Font読み込み失敗");
 		}
-		messageRenderer = new MessageRenderer();
+		messageRenderer = new MessageRenderer(config.getMessagefontpath());
 
 		input = new BMSPlayerInputProcessor(config, player);
-		switch(config.getAudioDriver()) {
-		case Config.AUDIODRIVER_SOUND:
+		switch(config.getAudioConfig().getDriver()) {
+		case OpenAL:
 			audio = new GdxSoundDriver(config);
 			break;
-		case Config.AUDIODRIVER_AUDIODEVICE:
-			audio = new GdxAudioDeviceDriver(config);
-			break;
+//		case AudioDevice:
+//			audio = new GdxAudioDeviceDriver(config);
+//			break;
 		}
 
 		resource = new PlayerResource(audio, config, player);
 		selector = new MusicSelector(this, songUpdated);
+		if(player.getRequestEnable()) {
+		    streamController = new StreamController(selector, (player.getRequestNotify() ? messageRenderer : null));
+	        streamController.run();
+		}
 		decide = new MusicDecide(this);
 		result = new MusicResult(this);
 		gresult = new CourseResult(this);
@@ -356,9 +371,11 @@ public class MainController extends ApplicationAdapter {
 		});
 		polling.start();
 
-		if(player.getTarget() >= TargetProperty.getAllTargetProperties().length) {
-			player.setTarget(0);
+		Array<String> targetlist = new Array<String>(player.getTargetlist());
+		for(int i = 0;i < rivals.getRivalCount();i++) {
+			targetlist.add("RIVAL_" + (i + 1));
 		}
+		TargetProperty.setTargets(targetlist.toArray(String.class), this);
 
 		Pixmap plainPixmap = new Pixmap(2,1, Pixmap.Format.RGBA8888);
 		plainPixmap.drawPixel(0,0, Color.toIntBits(255,0,0,0));
@@ -381,7 +398,7 @@ public class MainController extends ApplicationAdapter {
 			});
 			download.start(null);
 		}
-		
+
 		if(ir.length > 0) {
 			messageRenderer.addMessage(ir.length + " IR Connection Succeed" ,5000, Color.GREEN, 1);
 		}
@@ -391,10 +408,9 @@ public class MainController extends ApplicationAdapter {
 
 	private final StringBuilder message = new StringBuilder();
 
-	@Override
 	public void render() {
 //		input.poll();
-		nowmicrotime = ((System.nanoTime() - starttime) / 1000);
+		timer.update();
 
 		Gdx.gl.glClear(GL20.GL_COLOR_BUFFER_BIT);
 
@@ -415,23 +431,62 @@ public class MainController extends ApplicationAdapter {
 		// show fps
 		if (showfps && systemfont != null) {
 			sprite.begin();
-			systemfont.setColor(Color.PURPLE);
+			systemfont.setColor(Color.CYAN);
 			message.setLength(0);
-			systemfont.draw(sprite, message.append("FPS ").append(Gdx.graphics.getFramesPerSecond()), 10,
+			systemfont.draw(sprite, message.append("FPS ").append(Gdx.graphics.getFramesPerSecond()), debugTextXpos,
 					config.getResolution().height - 2);
-			if(debug) {
+					if(debug) {
 				message.setLength(0);
-				systemfont.draw(sprite, message.append("Skin Pixmap Images ").append(SkinLoader.getResource().size()), 10,
+				systemfont.draw(sprite, message.append("Skin Pixmap Images ").append(SkinLoader.getResource().size()), debugTextXpos,
 						config.getResolution().height - 26);
 				message.setLength(0);
-				systemfont.draw(sprite, message.append("Total Memory Used(MB) ").append(Runtime.getRuntime().totalMemory() / (1024 * 1024)), 10,
+				systemfont.draw(sprite, message.append("Total Memory Used(MB) ").append(Runtime.getRuntime().totalMemory() / (1024 * 1024)), debugTextXpos,
 						config.getResolution().height - 50);
 				message.setLength(0);
-				systemfont.draw(sprite, message.append("Total Free Memory(MB) ").append(Runtime.getRuntime().freeMemory() / (1024 * 1024)), 10,
+				systemfont.draw(sprite, message.append("Total Free Memory(MB) ").append(Runtime.getRuntime().freeMemory() / (1024 * 1024)), debugTextXpos,
 						config.getResolution().height - 74);
 				message.setLength(0);
-				systemfont.draw(sprite, message.append("Max Sprite In Batch ").append(sprite.maxSpritesInBatch), 10,
+				systemfont.draw(sprite, message.append("Max Sprite In Batch ").append(sprite.maxSpritesInBatch), debugTextXpos,
 						config.getResolution().height - 98);
+				message.setLength(0);
+				systemfont.draw(sprite, message.append("Skin Pixmap Resource Size ").append(SkinLoader.getResource().size()), debugTextXpos,
+						config.getResolution().height - 122);
+				message.setLength(0);
+				systemfont.draw(sprite, message.append("Stagefile Pixmap Resource Size ").append(selector.getStagefileResource().size()), debugTextXpos,
+						config.getResolution().height - 146);
+				message.setLength(0);
+				systemfont.draw(sprite, message.append("Banner Pixmap Resource Size ").append(selector.getBannerResource().size()), debugTextXpos,
+						config.getResolution().height - 170);
+						if (current.getSkin() != null) {
+					message.setLength(0);
+					systemfont.draw(sprite, message.append("Skin Prepare Time ").append(current.getSkin().pcntPrepare), debugTextXpos,
+							config.getResolution().height - 194);
+					message.setLength(0);
+					systemfont.draw(sprite, message.append("Skin Draw Time ").append(current.getSkin().pcntDraw), debugTextXpos,
+							config.getResolution().height - 218);
+					var i = 0;
+					var l = current.getSkin().pcntmap.keySet().stream().mapToInt(c->c.getSimpleName().length()).max().orElse(1);
+					var f = "%" + l + "s";
+					message.setLength(0);
+					message.append(String.format(f,"SkinObject")).append(" num // prepare cur/avg/max // draw cur/avg/max");
+					systemfont.draw(sprite, message, debugTextXpos, config.getResolution().height - 242);
+					var entrys = current.getSkin().pcntmap.entrySet().stream()
+						.sorted((e1,e2) -> e1.getKey().getSimpleName().compareTo(e2.getKey().getSimpleName()))
+						.toList();
+					for (Map.Entry<Class, long[]> e : entrys) {
+						message.setLength(0);
+						message.append(String.format(f,e.getKey().getSimpleName())).append(" ")
+						.append(e.getValue()[0]).append(" // ")
+						.append(e.getValue()[1]/100).append(" / ")
+						.append(e.getValue()[2]/100000).append(" / ")
+						.append(e.getValue()[3]/100).append(" // ")
+						.append(e.getValue()[4]/100).append(" / ")
+						.append(e.getValue()[5]/100000).append(" / ")
+						.append(e.getValue()[6]/100);
+						systemfont.draw(sprite, message, debugTextXpos, config.getResolution().height - (266 + i * 24));
+						i++;
+					}
+				}
 			}
 
 			sprite.end();
@@ -536,13 +591,12 @@ public class MainController extends ApplicationAdapter {
             	download.setDownloadpath(null);
             }
 			if (updateSong != null && !updateSong.isAlive()) {
-				selector.getBarRender().updateBar();
+				selector.getBarManager().updateBar();
 				updateSong = null;
 			}
         }
 	}
 
-	@Override
 	public void dispose() {
 		saveConfig();
 
@@ -552,6 +606,9 @@ public class MainController extends ApplicationAdapter {
 		if (selector != null) {
 			selector.dispose();
 		}
+		if (streamController != null) {
+		    streamController.dispose();
+        }
 		if (decide != null) {
 			decide.dispose();
 		}
@@ -578,17 +635,14 @@ public class MainController extends ApplicationAdapter {
 		Logger.getGlobal().info("全リソース破棄完了");
 	}
 
-	@Override
 	public void pause() {
 		current.pause();
 	}
 
-	@Override
 	public void resize(int width, int height) {
 		current.resize(width, height);
 	}
 
-	@Override
 	public void resume() {
 		current.resume();
 	}
@@ -622,9 +676,15 @@ public class MainController extends ApplicationAdapter {
 	public MusicDownloadProcessor getMusicDownloadProcessor(){
 		return download;
 	}
-	
+
 	public MessageRenderer getMessageRenderer() {
 		return messageRenderer;
+	}
+	
+	public void updateMainStateListener(int status) {
+		for(MainStateListener listener : stateListener) {
+			listener.update(current, status);
+		}
 	}
 
 	public long getPlayTime() {
@@ -636,34 +696,32 @@ public class MainController extends ApplicationAdapter {
 		return cl;
 	}
 
+	public TimerManager getTimer() {
+		return timer;
+	}
+
 	public long getStartTime() {
-		return starttime / 1000000;
+		return timer.getStartTime();
 	}
 
 	public long getStartMicroTime() {
-		return starttime / 1000;
+		return timer.getStartMicroTime();
 	}
 
 	public long getNowTime() {
-		return nowmicrotime / 1000;
+		return timer.getNowTime();
 	}
 
 	public long getNowTime(int id) {
-		if(isTimerOn(id)) {
-			return (nowmicrotime - getMicroTimer(id)) / 1000;
-		}
-		return 0;
+		return timer.getNowTime(id);
 	}
 
 	public long getNowMicroTime() {
-		return nowmicrotime;
+		return timer.getNowMicroTime();
 	}
 
 	public long getNowMicroTime(int id) {
-		if(isTimerOn(id)) {
-			return nowmicrotime - getMicroTimer(id);
-		}
-		return 0;
+		return timer.getNowMicroTime(id);
 	}
 
 	public long getTimer(int id) {
@@ -671,11 +729,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public long getMicroTimer(int id) {
-		if (id >= 0 && id < timerCount) {
-			return timer[id];
-		} else {
-			return current.getSkin().getMicroCustomTimer(id);
-		}
+		return timer.getMicroTimer(id);
 	}
 
 	public boolean isTimerOn(int id) {
@@ -683,7 +737,7 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void setTimerOn(int id) {
-		setMicroTimer(id, nowmicrotime);
+		timer.setTimerOn(id);
 	}
 
 	public void setTimerOff(int id) {
@@ -691,21 +745,11 @@ public class MainController extends ApplicationAdapter {
 	}
 
 	public void setMicroTimer(int id, long microtime) {
-		if (id >= 0 && id < timerCount) {
-			timer[id] = microtime;
-		} else {
-			current.getSkin().setMicroCustomTimer(id, microtime);
-		}
+		timer.setMicroTimer(id, microtime);
 	}
 
 	public void switchTimer(int id, boolean on) {
-		if(on) {
-			if(getMicroTimer(id) == Long.MIN_VALUE) {
-				setMicroTimer(id, nowmicrotime);
-			}
-		} else {
-			setMicroTimer(id, Long.MIN_VALUE);
-		}
+		timer.switchTimer(id, on);
 	}
 
 	private UpdateThread updateSong;
@@ -737,6 +781,10 @@ public class MainController extends ApplicationAdapter {
 		}
 	}
 
+	public static String getVersion() {
+		return VERSION;
+	}
+
 	abstract class UpdateThread extends Thread {
 
 		protected String message;
@@ -762,7 +810,7 @@ public class MainController extends ApplicationAdapter {
 
 		public void run() {
 			Message message = messageRenderer.addMessage(this.message, Color.CYAN, 1);
-			getSongDatabase().updateSongDatas(path, false, getInfoDatabase());
+			getSongDatabase().updateSongDatas(path, config.getBmsroot(), false, getInfoDatabase());
 			message.stop();
 		}
 	}
@@ -811,80 +859,16 @@ public class MainController extends ApplicationAdapter {
 		}
 	}
 
-	/**
-	 * BGM、効果音セット管理用クラス
-	 * 
-	 * @author exch
-	 */
-	public static class SystemSoundManager {
-		/**
-		 * 検出されたBGMセットのディレクトリパス
-		 */
-		private Array<Path> bgms = new Array<Path>();
-		/**
-		 * 現在のBGMセットのディレクトリパス
-		 */
-		private Path currentBGMPath;
-		/**
-		 * 検出された効果音セットのディレクトリパス
-		 */
-		private Array<Path> sounds = new Array<Path>();
-		/**
-		 * 現在の効果音セットのディレクトリパス
-		 */
-		private Path currentSoundPath;
-
-		public SystemSoundManager(Config config) {
-			if(config.getBgmpath() != null && config.getBgmpath().length() > 0) {
-				scan(Paths.get(config.getBgmpath()), bgms, "select.wav");				
-			}
-			if(config.getSoundpath() != null && config.getSoundpath().length() > 0) {
-				scan(Paths.get(config.getSoundpath()), sounds, "clear.wav");				
-			}
-			Logger.getGlobal().info("検出されたBGM Set : " + bgms.size + " Sound Set : " + sounds.size);
-		}
-
-		public void shuffle() {
-			if(bgms.size > 0) {
-				currentBGMPath = bgms.get((int) (Math.random() * bgms.size));
-			}
-			if(sounds.size > 0) {
-				currentSoundPath = sounds.get((int) (Math.random() * sounds.size));
-			}
-			Logger.getGlobal().info("BGM Set : " + currentBGMPath + " Sound Set : " + currentSoundPath);
-		}
-
-		public Path getBGMPath() {
-			return currentBGMPath;
-		}
-
-		public Path getSoundPath() {
-			return currentSoundPath;
-		}
-
-		private void scan(Path p, Array<Path> paths, String name) {
-			if (Files.isDirectory(p)) {
-				try (Stream<Path> sub = Files.list(p)) {
-					sub.forEach((t) -> {
-						scan(t, paths, name);
-					});
-					if (AudioDriver.getPaths(p.resolve(name).toString()).length > 0) {
-						paths.add(p);
-					}
-				} catch (IOException e) {
-				}
-			} 
-		}
-	}
-
 	public static class IRStatus {
-		
+
 		public final IRConfig config;
 		public final IRConnection connection;
-		
-		public IRStatus(IRConfig config, IRConnection connection) {
+		public final IRPlayerData player;
+
+		public IRStatus(IRConfig config, IRConnection connection, IRPlayerData player) {
 			this.config = config;
 			this.connection = connection;
+			this.player = player;
 		}
 	}
 }

@@ -1,6 +1,5 @@
 package bms.player.beatoraja.play;
 
-import bms.model.Mode;
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.PlayerResource;
 import bms.player.beatoraja.play.GaugeProperty.GaugeElementProperty;
@@ -8,6 +7,9 @@ import bms.player.beatoraja.result.AbstractResult;
 import bms.player.beatoraja.result.MusicResult;
 
 import static bms.player.beatoraja.play.GrooveGauge.*;
+
+import java.util.Optional;
+
 import bms.player.beatoraja.skin.*;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 
@@ -20,16 +22,16 @@ import com.badlogic.gdx.graphics.Color;
  *
  * @author exch
  */
-public class SkinGauge extends SkinObject {
+public final class SkinGauge extends SkinObject {
 
 	/**
 	 * イメージ
 	 */
-	private SkinSourceSet image;
+	private final SkinSourceSet image;
 	/**
 	 * アニメーションの種類
 	 */
-	private int animationType = ANIMATION_RANDOM;
+	private final int animationType;
 	/**
 	 * アニメーションの種類:ランダム
 	 */	
@@ -50,11 +52,11 @@ public class SkinGauge extends SkinObject {
 	/**
 	 * アニメーションする範囲
 	 */
-	private int animationRange = 4;
+	private final int animationRange;
 	/**
 	 * アニメーション間隔(ms)
 	 */
-	private long duration = 33;
+	private final long duration;
 	/**
 	 * ゲージの粒の数
 	 */
@@ -80,14 +82,14 @@ public class SkinGauge extends SkinObject {
 	private int endtime = 500;
 
 	/**
-	 * 7to9時にボーダーが丁度割り切れるゲージ粒数になっているかがチェック済みかどうか
+	 * 譜面オプションによるプレイモード変更時にボーダーが丁度割り切れるゲージ粒数になっているかがチェック済みかどうか
 	 */
-	private boolean isCheckedSevenToNine = false;
+	private boolean isCheckedModeChanged = false;
 
 	private final Color flickerColor = new Color();
 
 	public SkinGauge(TextureRegion[][] image, int timer, int cycle, int parts, int type, int range, int duration) {
-		this.image = new SkinSourceImage(image, timer, cycle);
+		this.image = new SkinSourceImageSet(image, timer, cycle);
 		this.parts = parts;
 		this.animationType = type;
 		this.animationRange = range;
@@ -98,10 +100,10 @@ public class SkinGauge extends SkinObject {
 	public void prepare(long time, MainState state) {
 		super.prepare(time, state);
 		GrooveGauge gauge = null;
-		if(state instanceof BMSPlayer) {
-			gauge = ((BMSPlayer) state).getGauge();
+		if(state instanceof BMSPlayer player) {
+			gauge = player.getGauge();
 		} else if(state instanceof AbstractResult) {
-			gauge = ((AbstractResult) state).main.getPlayerResource().getGrooveGauge();
+			gauge = state.resource.getGrooveGauge();
 		}
 		if (gauge == null) {
 			draw = false;
@@ -109,34 +111,33 @@ public class SkinGauge extends SkinObject {
 		}
 
 		switch(animationType) {
-		case ANIMATION_RANDOM:
-			if (atime < time) {
-				animation = (int) (Math.random() * (animationRange + 1));
-				atime = time + duration;
+			case ANIMATION_RANDOM -> {
+				if (atime < time) {
+					animation = (int) (Math.random() * (animationRange + 1));
+					atime = time + duration;
+				}
 			}
-			break;
-		case ANIMATION_INCLEASE:
-			if (atime < time) {
-				animation = (animation + animationRange) % (animationRange + 1);
-				atime = time + duration;
+			case ANIMATION_INCLEASE -> {
+				if (atime < time) {
+					animation = (animation + animationRange) % (animationRange + 1);
+					atime = time + duration;
+				}
 			}
-			break;
-		case ANIMATION_DECLEASE:
-			if (atime < time) {
-				animation = (animation + 1) % (animationRange + 1);
-				atime = time + duration;
+			case ANIMATION_DECLEASE -> {
+				if (atime < time) {
+					animation = (animation + 1) % (animationRange + 1);
+					atime = time + duration;
+				}
 			}
-			break;
-		case ANIMATION_FLICKERING:
-			animation = (int) (time % duration);
-			break;
+			case ANIMATION_FLICKERING -> {
+				animation = (int) (time % duration);
+			}
 		}
 
-		// TODO 9key固有実装の汎用化
-		if(!isCheckedSevenToNine) {
-			if(state.main.getPlayerResource().getOriginalMode() == Mode.BEAT_7K 
-					&& state.main.getPlayerResource().getBMSModel().getMode() == Mode.POPN_9K) {
-				//7to9 ボーダーが丁度割り切れるゲージ粒数に変更
+		//ボーダーが丁度割り切れるゲージ粒数に変更
+		// TODO できれば起動時にやりたい
+		if(!isCheckedModeChanged) {
+			if(state.resource.getOriginalMode() != state.resource.getBMSModel().getMode()) {
 				int setParts = parts;
 				for(int type = 0; type < gauge.getGaugeTypeLength(); type++) {
 					final GaugeElementProperty element = gauge.getGauge(type).getProperty();
@@ -149,7 +150,7 @@ public class SkinGauge extends SkinObject {
 				}
 				parts = setParts;
 			}
-			isCheckedSevenToNine = true;			
+			isCheckedModeChanged = true;			
 		}
 		
 		value = gauge.getValue();
@@ -158,7 +159,7 @@ public class SkinGauge extends SkinObject {
 		border = gauge.getGauge(type).getProperty().border;
 		
 		if(state instanceof AbstractResult) {
-			PlayerResource resource = ((AbstractResult) state).main.getPlayerResource();
+			PlayerResource resource = state.resource;
 			FloatArray gaugeTransition;
 			if(state instanceof MusicResult) {
 				gaugeTransition = resource.getGauge()[type];
@@ -185,38 +186,33 @@ public class SkinGauge extends SkinObject {
 		sprite.setType(SkinObjectRenderer.TYPE_NORMAL);
 		
 		switch(animationType) {
-		case ANIMATION_RANDOM:
-		case ANIMATION_INCLEASE:
-		case ANIMATION_DECLEASE:
-			for (int i = 1; i <= parts; i++) {
-				final float border = i * max / parts;
-				sprite.draw(
+			case ANIMATION_RANDOM, ANIMATION_INCLEASE, ANIMATION_DECLEASE -> {
+				for (int i = 1; i <= parts; i++) {
+					final float border = i * max / parts;
+					sprite.draw(
 						images[exgauge + (notes == i ? 4 : (notes - animation > i ? 0 : 2))
 								+ (border < this.border ? 1 : 0)],
 						region.x + region.width * (i - 1) / parts, region.y, region.width / parts, region.height);
 
-			}		
-			break;
-		case ANIMATION_FLICKERING:
-			for (int i = 1; i <= parts; i++) {
-				final float border = i * max / parts;
-				sprite.draw(
-						images[exgauge + (notes >= i ? 0 : 2)
-								+ (border < this.border ? 1 : 0)],
+				}		
+			}
+			case ANIMATION_FLICKERING -> {
+				for (int i = 1; i <= parts; i++) {
+					final float border = i * max / parts;
+					sprite.draw(images[exgauge + (notes >= i ? 0 : 2) + (border < this.border ? 1 : 0)],
 						region.x + region.width * (i - 1) / parts, region.y, region.width / parts, region.height);
 
-				if(i == notes) {
-					final Color orgColor = sprite.getColor();
-					flickerColor.set(orgColor.r, orgColor.g, orgColor.b, orgColor.a * (animation < duration / 2 ? animation / ((float) duration / 2 - 1) : ((duration - 1) - animation) / ((float) duration / 2 - 1)));
-					sprite.setColor(flickerColor);
-//					System.out.println(animation + "  " + duration + "  " + flickerColor.toString());
-					sprite.draw(
-							images[exgauge + 4 + (border < this.border ? 1 : 0)],
+					if(i == notes) {
+						final Color orgColor = sprite.getColor();
+						flickerColor.set(orgColor.r, orgColor.g, orgColor.b, orgColor.a * (animation < duration / 2 ? animation / ((float) duration / 2 - 1) : ((duration - 1) - animation) / ((float) duration / 2 - 1)));
+						sprite.setColor(flickerColor);
+//						System.out.println(animation + "  " + duration + "  " + flickerColor.toString());
+						sprite.draw(images[exgauge + 4 + (border < this.border ? 1 : 0)],
 							region.x + region.width * (i - 1) / parts, region.y, region.width / parts, region.height);
-					sprite.setColor(orgColor);
-				}
-			}		
-			break;
+						sprite.setColor(orgColor);
+					}
+				}		
+			}
 		}
 	}
 
@@ -228,31 +224,19 @@ public class SkinGauge extends SkinObject {
 		return animationType;
 	}
 
-	public void setAnimationType(int animationType) {
-		this.animationType = animationType;
-	}
-
 	public int getAnimationRange() {
 		return animationRange;
 	}
 
-	public void setAnimationRange(int animationRange) {
-		this.animationRange = animationRange;
-	}
-
-	public long getDuration() {
+	public final long getDuration() {
 		return duration;
 	}
 
-	public void setDuration(long duration) {
-		this.duration = duration;
-	}
-
-	public int getParts() {
+	public final int getParts() {
 		return parts;
 	}
 
-	public void setParts(int parts) {
+	public final void setParts(int parts) {
 		this.parts = parts;
 	}
 
@@ -266,9 +250,7 @@ public class SkinGauge extends SkinObject {
 
 	@Override
 	public void dispose() {
-		if (image != null) {
-			image.dispose();
-			image = null;
-		}
+		Optional.ofNullable(image).ifPresent(SkinSourceSet::dispose);
+		setDisposed();
 	}
 }

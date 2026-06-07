@@ -7,6 +7,8 @@ import bms.player.beatoraja.skin.*;
 import bms.player.beatoraja.skin.json.JSONSkinLoader;
 import bms.player.beatoraja.skin.json.JsonSkin;
 import bms.player.beatoraja.skin.property.*;
+
+import com.badlogic.gdx.utils.ObjectMap;
 import com.badlogic.gdx.utils.reflect.ClassReflection;
 import com.badlogic.gdx.utils.reflect.Field;
 import com.badlogic.gdx.utils.reflect.ReflectionException;
@@ -20,6 +22,11 @@ import java.util.HashMap;
 import java.util.Map;
 import java.util.function.Function;
 
+/**
+ * Luaスキンローダー
+ * 
+ * @author excln
+ */
 public class LuaSkinLoader extends JSONSkinLoader {
 
 	public LuaSkinLoader() {
@@ -53,9 +60,20 @@ public class LuaSkinLoader extends JSONSkinLoader {
 	public Skin load(Path p, SkinType type, SkinConfig.Property property) {
 		Skin skin = null;
 		SkinHeader header = loadHeader(p);
-		try {
-			initFileMap(header, property);
-			lua.exportSkinProperty(property, (String path) -> {
+		if(header == null) {
+			return null;
+		}
+		header.setSkinConfigProperty(property);
+		
+		try {			
+			filemap = new ObjectMap<>();
+			for(SkinHeader.CustomFile customFile : header.getCustomFiles()) {
+				if(customFile.getSelectedFilename() != null) {
+					filemap.put(customFile.path, customFile.getSelectedFilename());
+				}
+			}
+
+			lua.exportSkinProperty(header, property, (String path) -> {
 				return getPath(p.getParent().toString() + "/" + path, filemap).getPath();
 			});
 			LuaValue value = lua.execFile(p);
@@ -81,13 +99,13 @@ public class LuaSkinLoader extends JSONSkinLoader {
 			put(IntegerProperty.class, lv ->
 					serializeLuaScript(lv, lua::loadIntegerProperty, lua::loadIntegerProperty, IntegerPropertyFactory::getIntegerProperty));
 			put(FloatProperty.class, lv ->
-					serializeLuaScript(lv, lua::loadFloatProperty, lua::loadFloatProperty, FloatPropertyFactory::getFloatProperty));
+					serializeLuaScript(lv, lua::loadFloatProperty, lua::loadFloatProperty, FloatPropertyFactory::getRateProperty));
 			put(StringProperty.class, lv ->
 					serializeLuaScript(lv, lua::loadStringProperty, lua::loadStringProperty, StringPropertyFactory::getStringProperty));
 			put(TimerProperty.class, lv ->
 					serializeLuaScript(lv, lua::loadTimerProperty, lua::loadTimerProperty, TimerPropertyFactory::getTimerProperty));
 			put(FloatWriter.class, lv ->
-					serializeLuaScript(lv, lua::loadFloatWriter, lua::loadFloatWriter, FloatPropertyFactory::getFloatWriter));
+					serializeLuaScript(lv, lua::loadFloatWriter, lua::loadFloatWriter, FloatPropertyFactory::getRateWriter));
 			put(Event.class, lv ->
 					serializeLuaScript(lv, lua::loadEvent, lua::loadEvent, EventFactory::getEvent));
 		}

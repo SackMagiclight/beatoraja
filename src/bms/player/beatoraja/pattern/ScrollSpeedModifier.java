@@ -3,8 +3,6 @@ package bms.player.beatoraja.pattern;
 import bms.model.BMSModel;
 import bms.model.TimeLine;
 
-import java.util.List;
-
 /**
  * スクロールスピード変更に関するオプション
  *
@@ -14,17 +12,27 @@ public class ScrollSpeedModifier extends PatternModifier {
 
     private Mode mode = Mode.REMOVE;
 
-    private double rate = 0.5;
+    /**
+     * スクロールを変更する小節単位
+     */
+    private int section = 4;
 
+    /**
+     * 変更するスクロール幅
+     */
+    private double rate = 0.5;
+    
     public ScrollSpeedModifier() {
     }
 
-    public ScrollSpeedModifier(int mode) {
+    public ScrollSpeedModifier(int mode, int section, double scrollrate) {
         this.mode = Mode.values()[mode];
+        this.section = section;
+        this.rate = scrollrate;
     }
 
     @Override
-    public List<PatternModifyLog> modify(BMSModel model) {
+    public void modify(BMSModel model) {
         if(mode == Mode.REMOVE) {
             // スクロールスピード変更、ストップシーケンス無効化
             AssistLevel assist = AssistLevel.NONE;
@@ -40,18 +48,21 @@ public class ScrollSpeedModifier extends PatternModifier {
                 tl.setScroll(starttl.getScroll());
             }
             setAssistLevel(assist);
-            return null;
-        }
-
-        final double base = model.getAllTimeLines()[0].getScroll();
-        double current = base;
-        for (TimeLine tl : model.getAllTimeLines()) {
-            if(tl.getSectionLine()) {
-                current = base * (1.0 + Math.random() * rate * 2 - rate);
+        } else {
+            final double base = model.getAllTimeLines()[0].getScroll();
+            double current = base;
+            int sectioncount = 0;
+            for (TimeLine tl : model.getAllTimeLines()) {
+                if(tl.getSectionLine()) {
+                	sectioncount++;
+                	if(section == sectioncount) {
+                        current = base * (1.0 + Math.random() * rate * 2 - rate);
+                        sectioncount = 0;
+                	}
+                }
+                tl.setScroll(current);
             }
-            tl.setScroll(current);
         }
-        return null;
     }
 
     public enum Mode {

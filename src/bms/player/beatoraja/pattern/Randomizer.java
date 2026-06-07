@@ -5,17 +5,16 @@ import java.util.stream.Collectors;
 
 import bms.model.*;
 import bms.player.beatoraja.PlayerConfig;
+import bms.player.beatoraja.pattern.PatternModifier.AssistLevel;
 
 /**
  * TimeLine毎にレーンを置換するクラス
+ * 
  * @author KEH
- *
  */
 public abstract class Randomizer {
 
 	protected Mode mode;
-
-	private static PlayerConfig config;
 
 	protected static final int SRAN_THRESHOLD = 40;
 
@@ -25,6 +24,8 @@ public abstract class Randomizer {
 	 * 変更対象レーン
 	 */
 	protected int[] modifyLanes;
+	
+	protected java.util.Random random = new java.util.Random((long) (Math.random() * 65536 * 65536 * 65536));
 
 	/**
 	 * LNが配置されているレーン
@@ -49,6 +50,10 @@ public abstract class Randomizer {
 	 * Listは変更してもよい。TimeLineは変更してはならない。
 	 */
 	abstract Map<Integer, Integer> randomize(TimeLine tl, List<Integer> changeableLane, List<Integer> assignableLane);
+	/**
+	 * 譜面変更のアシストレベル
+	 */
+	private AssistLevel assist = AssistLevel.NONE;
 
 	/**
 	 * TimeLineのノーツをrandomizeで定義された方法で入れ替える
@@ -114,18 +119,28 @@ public abstract class Randomizer {
 		return LNactive.values();
 	}
 
-	public static void setPlayerConfig(PlayerConfig pc) {
-		config = pc;
+	public AssistLevel getAssistLevel() {
+		return assist;
+	}
+
+	protected void setAssistLevel(AssistLevel assist) {
+		this.assist = (assist != null ? assist : AssistLevel.NONE);
+	}
+
+	public void setRandomSeed(long seed) {
+		if(seed >= 0) {
+			random.setSeed(seed);
+		}
 	}
 
 	/**
 	 * 対応するランダマイザ生成
 	 */
-	public static Randomizer create(Random r, Mode mode) {
-		return create(r, 0, mode);
+	public static Randomizer create(Random r, Mode mode, PlayerConfig config) {
+		return create(r, 0, mode, config);
 	}
 
-	public static Randomizer create(Random r, int playSide, Mode mode) {
+	public static Randomizer create(Random r, int playSide, Mode mode, PlayerConfig config) {
 		Randomizer randomizer = null;
 		int thresholdBPM = config.getHranThresholdBPM();
 		int thresholdMillis;
@@ -137,36 +152,17 @@ public abstract class Randomizer {
 			thresholdMillis = DEFAULT_HRAN_THRESHOLD;
 		}
 
-		switch (r) {
-		case ALL_SCR:
-			if (mode == Mode.POPN_9K) {
-				randomizer = new ConvergeRandomizer(thresholdMillis, thresholdMillis * 2);
-			} else {
-				randomizer = new AllScratchRandomizer(SRAN_THRESHOLD, thresholdMillis, playSide);
-			}
-			break;
-		case H_RANDOM:
-			randomizer = new SRandomizer(thresholdMillis);
-			break;
-		case SPIRAL:
-			randomizer = new SpiralRandomizer();
-			break;
-		case S_RANDOM:
-			if (mode == Mode.POPN_9K) {
-				randomizer = new SRandomizer(0);
-			} else {
-				randomizer = new SRandomizer(SRAN_THRESHOLD);
-			}
-			break;
-		case S_RANDOM_EX:
-			if (mode == Mode.POPN_9K) {
-				randomizer = new NoMurioshiRandomizer(thresholdMillis);
-			} else {
-				randomizer = new SRandomizer(SRAN_THRESHOLD);
-			}
-			break;
-		default:
-		}
+		randomizer = switch (r) {
+			case ALL_SCR -> new AllScratchRandomizer(SRAN_THRESHOLD, thresholdMillis, playSide);
+			case CONVERGE -> new ConvergeRandomizer(thresholdMillis, thresholdMillis * 2);
+			case H_RANDOM -> new SRandomizer(thresholdMillis, AssistLevel.LIGHT_ASSIST);
+			case SPIRAL -> new SpiralRandomizer();
+			case S_RANDOM -> new SRandomizer(SRAN_THRESHOLD, AssistLevel.NONE);
+			case S_RANDOM_NO_THRESHOLD -> new SRandomizer(0, AssistLevel.NONE);
+			case S_RANDOM_EX -> new SRandomizer(SRAN_THRESHOLD, AssistLevel.LIGHT_ASSIST);
+			case S_RANDOM_PLAYABLE -> new NoMurioshiRandomizer(thresholdMillis);
+			default -> throw new IllegalArgumentException("Unexpected value: " + r);
+		};
 		randomizer.setMode(mode);
 		return randomizer;
 	}
@@ -175,8 +171,8 @@ public abstract class Randomizer {
 
 /**
  * 時間に依存するランダムに必要な機能を実装する抽象クラス
+ * 
  * @author KEH
- *
  */
 abstract class TimeBasedRandomizer extends Randomizer {
 
@@ -237,7 +233,7 @@ abstract class TimeBasedRandomizer extends Randomizer {
 			List<Integer> minLane = inferiorLane.stream()
 					.filter(l -> {return lastNoteTime.get(l) == min;})
 					.collect(Collectors.toList());
-			Integer m = minLane.get((int)(minLane.size() * Math.random()));
+			Integer m = minLane.get(random.nextInt(minLane.size()));
 			randomMap.put(noteLane.remove(0), m);
 			inferiorLane.remove(m);
 		}
@@ -245,7 +241,7 @@ abstract class TimeBasedRandomizer extends Randomizer {
 		// 残りをランダムに置いていく
 		primaryLane.addAll(inferiorLane);
 		while (!emptyLane.isEmpty()) {
-			int r = (int) (primaryLane.size() * Math.random());
+			int r = random.nextInt(primaryLane.size());
 			randomMap.put(emptyLane.remove(0), primaryLane.remove(r));
 		}
 
@@ -268,10 +264,16 @@ abstract class TimeBasedRandomizer extends Randomizer {
 	abstract int selectLane(List<Integer> lane);
 }
 
+/**
+ * S-RANDOM、H-RANDOMランダマイザ
+ * 
+ * @author KEH
+ */
 class SRandomizer extends TimeBasedRandomizer {
 
-	public SRandomizer(int threshold) {
+	public SRandomizer(int threshold, AssistLevel assist) {
 		super(threshold);
+		setAssistLevel(assist);
 	}
 
 	@Override
@@ -285,20 +287,28 @@ class SRandomizer extends TimeBasedRandomizer {
 
 	@Override
 	int selectLane(List<Integer> lane) {
-		return (int) (lane.size() * Math.random());
+		return random.nextInt(lane.size());
 	}
 }
 
+/**
+ * SPIRALランダマイザ
+ * 
+ * @author KEH
+ */
 class SpiralRandomizer extends Randomizer {
 
 	private int increment;
 	private int head;
 	private int cycle;
 
+	public SpiralRandomizer() {
+		setAssistLevel(AssistLevel.LIGHT_ASSIST);
+	}
 	@Override
 	public void setModifyLanes(int[] lanes) {
 		super.setModifyLanes(lanes);
-		this.increment = (int) ((lanes.length - 1) * Math.random()) + 1;
+		this.increment = random.nextInt(lanes.length - 1) + 1;
 		this.head = 0;
 		this.cycle = lanes.length;
 	}
@@ -326,6 +336,11 @@ class SpiralRandomizer extends Randomizer {
 
 }
 
+/**
+ * ALL-SCRランダマイザ
+ * 
+ * @author KEH
+ */
 class AllScratchRandomizer extends TimeBasedRandomizer {
 
 	private int scratchThreshold;
@@ -340,6 +355,7 @@ class AllScratchRandomizer extends TimeBasedRandomizer {
 		this.scratchThreshold = s;
 		this.scratchIndex = 0;
 		this.modifySide = modifySide; // 1P側は0,2P側は1
+		setAssistLevel(AssistLevel.LIGHT_ASSIST);
 	}
 
 	// scratchLaneの決定
@@ -395,31 +411,36 @@ class AllScratchRandomizer extends TimeBasedRandomizer {
 		if (isDoublePlay) {
 			int index = -1;
 			switch (modifySide) {
-			case SIDE_1P:
-				int min = Integer.MAX_VALUE;
-				for (int i = 0; i < lane.size(); i++) {
-					if (lane.get(i) < min) {
-						min = lane.get(i);
-						index = i;
+				case SIDE_1P -> {
+					int min = Integer.MAX_VALUE;
+					for (int i = 0; i < lane.size(); i++) {
+						if (lane.get(i) < min) {
+							min = lane.get(i);
+							index = i;
+						}
 					}
 				}
-				break;
-			case SIDE_2P:
-				int max = Integer.MIN_VALUE;
-				for (int i = 0; i < lane.size(); i++) {
-					if (lane.get(i) > max) {
-						max = lane.get(i);
-						index = i;
-					}
+				case SIDE_2P -> {
+					int max = Integer.MIN_VALUE;
+					for (int i = 0; i < lane.size(); i++) {
+						if (lane.get(i) > max) {
+							max = lane.get(i);
+							index = i;
+						}
+					}					
 				}
-				break;
 			}
 			return index;
 		}
-		return (int) (lane.size() * Math.random());
+		return random.nextInt(lane.size());
 	}
 }
 
+/**
+ * PMSでの無理押し防止S-RANDOMランダマイザ
+ * 
+ * @author KEH
+ */
 class NoMurioshiRandomizer extends TimeBasedRandomizer {
 
 	static final List<List<Integer>> buttonCombinationTable;
@@ -443,6 +464,7 @@ class NoMurioshiRandomizer extends TimeBasedRandomizer {
 
 	public NoMurioshiRandomizer(int threshold) {
 		super(threshold);
+		setAssistLevel(AssistLevel.LIGHT_ASSIST);
 	}
 
 	@Override
@@ -476,16 +498,16 @@ class NoMurioshiRandomizer extends TimeBasedRandomizer {
 						.collect(Collectors.toList());
 				if (candidate2.size() != 0) {
 					// 候補の長さがTLのノート数以上のものが残れば、それを選ぶ
-					buttonCombination = candidate2.get((int)(candidate2.size() * Math.random()));
+					buttonCombination = candidate2.get(random.nextInt(candidate2.size()));
 				} else {
 					// 縦連打が発生しないことより、無理押しが発生しないことを優先する
 					randomMap = new HashMap<>();
-					buttonCombination = candidate.get((int)(candidate2.size() * Math.random())).stream()
+					buttonCombination = candidate.get(random.nextInt(candidate2.size())).stream()
 							.filter(assignableLane::contains).collect(Collectors.toList());
 					List<Integer> e = getNoteExistLane(tl).stream()
 							.filter(changeableLane::contains).collect(Collectors.toList());
 					e.stream().forEach(lane -> {
-						int i = (int)(buttonCombination.size() * Math.random());
+						int i = random.nextInt(buttonCombination.size());
 						randomMap.put(lane, buttonCombination.get(i));
 						changeableLane.remove((Integer)lane);
 						assignableLane.remove(buttonCombination.remove(i));
@@ -510,10 +532,10 @@ class NoMurioshiRandomizer extends TimeBasedRandomizer {
 		if (flag) {
 			List<Integer> l = lane.stream().filter(buttonCombination::contains).collect(Collectors.toList());
 			if (l.size() != 0) {
-				return lane.indexOf(l.get((int) (l.size() * Math.random())));
+				return lane.indexOf(l.get(random.nextInt(l.size())));
 			}
 		}
-		return (int) (lane.size() * Math.random());
+		return random.nextInt(lane.size());
 	}
 
 	// LNアクティブも含めたタイムラインのノート数
@@ -537,8 +559,8 @@ class NoMurioshiRandomizer extends TimeBasedRandomizer {
 
 /**
  * threshold1以上threshold2以下の間隔の連打ができるだけ長く発生するように配置する
+ * 
  * @author KEH
- *
  */
 class ConvergeRandomizer extends TimeBasedRandomizer {
 
@@ -549,6 +571,7 @@ class ConvergeRandomizer extends TimeBasedRandomizer {
 		super(threshold1);
 		this.threshold2 = threshold2;
 		this.rendaCount = new HashMap<>();
+		setAssistLevel(AssistLevel.LIGHT_ASSIST);
 	}
 
 	@Override
@@ -582,7 +605,7 @@ class ConvergeRandomizer extends TimeBasedRandomizer {
 		List<Integer> gya = lane.stream()
 				.filter(l -> {return rendaCount.get(l) == max;})
 				.collect(Collectors.toList());
-		int l = gya.get((int) (gya.size() * Math.random()));
+		int l = gya.get(random.nextInt(gya.size()));
 		rendaCount.put(l, rendaCount.get(l) + 1);
 		return lane.indexOf(l);
 	}

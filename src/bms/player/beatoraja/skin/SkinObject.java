@@ -1,5 +1,6 @@
 package bms.player.beatoraja.skin;
 
+import bms.player.beatoraja.DisposableObject;
 import bms.player.beatoraja.MainState;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 import bms.player.beatoraja.skin.property.*;
@@ -15,7 +16,7 @@ import com.badlogic.gdx.utils.*;
  * 
  * @author exch
  */
-public abstract class SkinObject implements Disposable {
+public abstract class SkinObject extends DisposableObject {
 
 	/**
 	 * オフセットの参照ID
@@ -266,7 +267,7 @@ public abstract class SkinObject implements Disposable {
 		this.dstdraw = dstdraw;
 	}
 
-	public void setStretch(int stretch) {
+	public final void setStretch(int stretch) {
 		if (stretch < 0)
 			return;
 		for (StretchType type : StretchType.values()) {
@@ -277,15 +278,15 @@ public abstract class SkinObject implements Disposable {
 		}
 	}
 
-	public void setStretch(StretchType stretch) {
+	public final void setStretch(StretchType stretch) {
 		this.stretch = stretch;
 	}
 
-	public StretchType getStretch() {
+	public final StretchType getStretch() {
 		return stretch;
 	}
 
-	public int getBlend() {
+	public final int getBlend() {
 		return this.dstblend;
 	}
 
@@ -572,19 +573,18 @@ public abstract class SkinObject implements Disposable {
 	protected boolean mousePressed(MainState state, int button, int x, int y) {
 		if (clickevent != null) {
 			final Rectangle r = region;
-			// System.out.println(obj.getClickeventId() + " : " + r.x +
-			// "," + r.y + "," + r.width + "," + r.height + " - " + x +
-			// "," + y);
+			final int[] buttonEvents = {1,-1,1,1,-1};
+			final int inc = button >= 0 && button < buttonEvents.length ? buttonEvents[button] : 0;
 			switch (clickeventType) {
 			case 0:
 				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
-					clickevent.exec(state, 1);
+					clickevent.exec(state, inc);
 					return true;
 				}
 				break;
 			case 1:
 				if (r != null && r.x <= x && r.x + r.width >= x && r.y <= y && r.y + r.height >= y) {
-					clickevent.exec(state, -1);
+					clickevent.exec(state, -inc);
 					return true;
 				}
 				break;
@@ -749,28 +749,19 @@ public abstract class SkinObject implements Disposable {
 		return dsttimer;
 	}
 	
-	public static void disposeAll(Disposable[] obj) {
-		for(int i = 0;i < obj.length;i++) {
-			if(obj[i] != null) {
-				obj[i].dispose();
-				obj[i] = null;
-			}
-		}
-	}
-
-	public int getImageType() {
+	public final int getImageType() {
 		return imageType;
 	}
 
-	public void setImageType(int imageType) {
+	public final void setImageType(int imageType) {
 		this.imageType = imageType;
 	}
 	
-	public int getFilter() {
+	public final int getFilter() {
 		return dstfilter;
 	}
 
-	public void setFilter(int filter) {
+	public final void setFilter(int filter) {
 		dstfilter = filter;
 	}
 

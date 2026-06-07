@@ -7,6 +7,8 @@ import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 import bms.player.beatoraja.song.SongData;
 
 import java.util.Arrays;
+import java.util.Optional;
+import java.util.stream.Stream;
 
 import com.badlogic.gdx.graphics.*;
 import com.badlogic.gdx.graphics.g2d.TextureRegion;
@@ -17,26 +19,18 @@ import com.badlogic.gdx.math.Rectangle;
  * 
  * @author exch
  */
-public class SkinNoteDistributionGraph extends SkinObject {
+public final class SkinNoteDistributionGraph extends SkinObject {
 
 	private MainState state;
 
+	// TODO 各Textureを1枚にまとめてblBindTextureの回数を削減する
 	private TextureRegion backtex;
 	private TextureRegion shapetex;
+	private TextureRegion cursortex;
+	
+	private Pixmap back = null;
 	private Pixmap shape = null;
-
-	/**
-	 * 開始位置のカーソル(プラクティス)
-	 */
-	private TextureRegion startcursor;
-	/**
-	 * 現在位置のカーソル(プレイ中)
-	 */
-	private TextureRegion nowcursor;
-	/**
-	 * 終了位置のカーソル(プラクティス)
-	 */
-	private TextureRegion endcursor;
+	private Pixmap cursor = null;
 
 	private BMSModel model;
 	private SongData current;
@@ -76,11 +70,14 @@ public class SkinNoteDistributionGraph extends SkinObject {
 	private int delay = 500;
 	private boolean isOrderReverse = false;
 	private boolean isNoGap = false;
+	private boolean isNoGapX = false;
 
 	/*
 	 * 処理済みノート数 プレイ時は処理済みノート数に変化があった時だけ更新する
 	 */
 	private int pastNotes = 0;
+	private long notesLastUpdateTime;
+	private long cursorLastUpdateTime;
 	
 	private int starttime;
 	private int endtime;
@@ -90,35 +87,22 @@ public class SkinNoteDistributionGraph extends SkinObject {
 	private static final Color TRANSPARENT_COLOR = Color.valueOf("00000000");
 
 	public SkinNoteDistributionGraph() {
-		this(TYPE_NORMAL, 500, 0, 0, 0);
+		this(TYPE_NORMAL, 500, 0, 0, 0, 0);
 	}
 
-	public SkinNoteDistributionGraph(int type, int delay, int backTexOff, int orderReverse, int noGap) {
-		this(null, type, delay, backTexOff, orderReverse, noGap);
+	public SkinNoteDistributionGraph(int type, int delay, int backTexOff, int orderReverse, int noGap, int noGapX) {
+		this(null, type, delay, backTexOff, orderReverse, noGap, noGapX);
 	}
 	
-	public SkinNoteDistributionGraph(Pixmap[] chips, int type, int delay, int backTexOff, int orderReverse, int noGap) {
+	public SkinNoteDistributionGraph(Pixmap[] chips, int type, int delay, int backTexOff, int orderReverse, int noGap, int noGapX) {
 		this.chips = chips;
 		this.type = type;
 		this.isBackTexOff = backTexOff == 1;
 		this.delay = delay;
 		this.isOrderReverse = orderReverse == 1;
 		this.isNoGap = noGap == 1;
+		this.isNoGapX = noGapX == 1;
 		pastNotes = 0;
-
-		Pixmap bp = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-		bp.drawPixel(0, 0, Color.toIntBits(255, 128, 255, 128));
-		startcursor = new TextureRegion(new Texture(bp));
-		bp.dispose();
-		bp = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-		bp.drawPixel(0, 0, Color.toIntBits(255, 128, 128, 255));
-		endcursor = new TextureRegion(new Texture(bp));
-		bp.dispose();
-		bp = new Pixmap(1, 1, Pixmap.Format.RGBA8888);
-		bp.drawPixel(0, 0, Color.toIntBits(255, 255, 255, 255));
-		nowcursor = new TextureRegion(new Texture(bp));
-		bp.dispose();
-
 	}
 	
 	public void prepare(long time, MainState state) {
@@ -140,7 +124,7 @@ public class SkinNoteDistributionGraph extends SkinObject {
 
 	public void draw(SkinObjectRenderer sprite) {	
 		
-		final SongData song = state.main.getPlayerResource().getSongdata();
+		final SongData song = state.resource.getSongdata();
 		final BMSModel model = song != null ? song.getBMSModel() : null;
 		
 		// TODO スキン定義側で分岐できないか？
@@ -154,49 +138,81 @@ public class SkinNoteDistributionGraph extends SkinObject {
 			}
 		}
 
-		if(song != current || (this.model == null && model != null)) {
+		if(shapetex == null || song != current || (this.model == null && model != null)) {
 			current = song;
 			this.model = model;
 			if(type == TYPE_NORMAL && song != null && song.getInformation() != null) {
 				updateGraph(song.getInformation().getDistributionValues());				
 			} else {
-				updateGraph(model);
+				updateGraph();
 			}
-		}
-		if (shapetex == null) {
-			updateGraph(model);
 		}
 
 		//プレイ時、判定をリアルタイムで更新する
-		if(model != null && state instanceof BMSPlayer && type != TYPE_NORMAL && pastNotes != ((BMSPlayer)state).getPastNotes()) {
-			pastNotes = ((BMSPlayer)state).getPastNotes();
-			// TODO さらなる高速化のアイデア-BMSPlayerから更新したノーツの時間だけを渡し。指定時間のデータ/イメージのみ更新する
-			updateData(model);
-			updateTexture();
+		/*
+		 * TODO 高速化のアイデア
+		 * BMSPlayerから更新したノーツの時間だけを渡し。指定時間のデータ/イメージのみ更新する
+		 * backtex更新は初回のみ
+		 */
+		if(model != null && state instanceof BMSPlayer) {
+			if(System.currentTimeMillis() > notesLastUpdateTime + 750) {
+				if(type != TYPE_NORMAL && pastNotes != ((BMSPlayer)state).getPastNotes()) {
+					pastNotes = ((BMSPlayer)state).getPastNotes();
+					updateData();
+					updateTexture(false);
+				}
+				notesLastUpdateTime = System.currentTimeMillis();
+			}
+			if(System.currentTimeMillis() > cursorLastUpdateTime + 50) {
+				final int oldw = cursor != null ? cursor.getWidth() : 0;
+				final int oldh = cursor != null ? cursor.getHeight() : 0;
+				final int w = data.length * 5;
+				final int h = max * 5;
+				cursor.setColor(TRANSPARENT_COLOR);
+				cursor.fill();
+				// スタートカーソル描画		
+				if (starttime >= 0) {
+					int dx = (int) (starttime * w / (data.length * 1000));
+					cursor.setColor(Color.toIntBits(255, 128, 255, 128));
+					cursor.fillRectangle(dx, 0, 3, h);
+				}
+				// エンドカーソル描画
+				if (endtime >= 0) {
+					int dx = (int) (endtime * w / (data.length * 1000));
+					cursor.setColor(Color.toIntBits(255, 128, 128, 255));
+					cursor.fillRectangle(dx, 0, 3, h);
+				}
+				// 現在カーソル描画
+				if (state instanceof BMSPlayer && state.timer.isTimerOn(SkinProperty.TIMER_PLAY)) {
+					float currenttime = state.timer.getNowTime(SkinProperty.TIMER_PLAY);
+					if (freq > 0) {
+						currenttime *= freq;
+					}
+					int dx = (int) (currenttime * w / (data.length * 1000));
+					cursor.setColor(Color.toIntBits(255, 255, 255, 255));
+					cursor.fillRectangle(dx, 0, 3, h);
+				}
+				
+				if(cursortex == null) {
+					cursortex = new TextureRegion(new Texture(cursor));
+				} else if(oldw != w || oldh != h) {
+					cursortex.getTexture().dispose();
+					cursortex = new TextureRegion(new Texture(cursor));
+				} else {
+					cursortex.getTexture().draw(cursor, 0, 0);
+				}
+				cursorLastUpdateTime = System.currentTimeMillis();				
+			}
+			draw(sprite, backtex, region.x, region.y + region.height, region.width, -region.height);
+			shapetex.setRegionWidth((int) (shapetex.getTexture().getWidth() * render));
+			draw(sprite, shapetex, region.x, region.y + region.height, region.width * render, -region.height);			
+			draw(sprite, cursortex, region.x, region.y + region.height, region.width, -region.height);
+		} else {
+			draw(sprite, backtex, region.x, region.y + region.height, region.width, -region.height);
+			shapetex.setRegionWidth((int) (shapetex.getTexture().getWidth() * render));
+			draw(sprite, shapetex, region.x, region.y + region.height, region.width * render, -region.height);
 		}
 
-		draw(sprite, backtex, region.x, region.y + region.height, region.width, -region.height);
-		shapetex.setRegionWidth((int) (shapetex.getTexture().getWidth() * render));
-		draw(sprite, shapetex, region.x, region.y + region.height, region.width * render, -region.height);
-		// スタートカーソル描画
-		if (starttime >= 0) {
-			int dx = (int) (starttime * region.width / (data.length * 1000));
-			sprite.draw(startcursor, region.x + dx, region.y, 1, region.height);
-		}
-		// エンドカーソル描画
-		if (endtime >= 0) {
-			int dx = (int) (endtime * region.width / (data.length * 1000));
-			sprite.draw(endcursor, region.x + dx, region.y, 1, region.height);
-		}
-		// 現在カーソル描画
-		if (state instanceof BMSPlayer && state.main.isTimerOn(SkinProperty.TIMER_PLAY)) {
-			float currenttime = state.main.getNowTime(SkinProperty.TIMER_PLAY);
-			if (freq > 0) {
-				currenttime *= freq;
-			}
-			int dx = (int) (currenttime * region.width / (data.length * 1000));
-			sprite.draw(nowcursor, region.x + dx, region.y, 1, region.height);
-		}
 	}
 	
 	public void draw(SkinObjectRenderer sprite, long time, MainState state, Rectangle r, int starttime, int endtime, float freq) {
@@ -219,31 +235,34 @@ public class SkinNoteDistributionGraph extends SkinObject {
 			}
 		}
 
-		updateTexture();
+		updateTexture(true);
 	}
 
 	
-	private void updateGraph(BMSModel model) {
+	private void updateGraph() {
 		if (model == null) {
 			data = new int[0][DATA_LENGTH[type]];
 		} else {
 			data = new int[model.getLastTime() / 1000 + 1][DATA_LENGTH[type]];
 			
-			updateData(model);
+			updateData();
 		}
 		
-		updateTexture();
+		updateTexture(true);
 	}
 	
-	private void updateData(BMSModel model) {
+	private void updateData() {
 		int pos = -1;
 		int count = 0;
 		max = 20;
 		for(int[] d : data) {
-			Arrays.fill(d, 0);
+			Arrays.fill(d, 0);				
 		}
 
 		final Mode mode = model.getMode();
+		// #LNMODE is explicitly set to 1 (LN)
+		// or #LNMODE is undefined and getLntype (which reflects playconfig) is LN (0)
+		final boolean ignoreLNEnd = model.getLnmode() == 1 || (model.getLnmode() == 0 && model.getLntype() == BMSModel.LNTYPE_LONGNOTE);
 		for (TimeLine tl : model.getAllTimeLines()) {
 			final int index = tl.getTime() / 1000;
 			if(index >= data.length) {
@@ -266,36 +285,31 @@ public class SkinNoteDistributionGraph extends SkinObject {
 						if (n instanceof NormalNote) {
 							data[index][mode.isScratchKey(i) ? 2 : 5]++;
 							count++;
-						}
-						if (n instanceof LongNote) {
+						} else if (n instanceof LongNote) {
 							if(!((LongNote)n).isEnd()) {
 								for(int lnindex = index;lnindex <= ((LongNote)n).getPair().getTime() / 1000;lnindex++) {
 									data[lnindex][mode.isScratchKey(i) ? 1 : 4]++;
 								}
 								count++;
 							}
-							if((model.getLntype() == BMSModel.LNTYPE_LONGNOTE && n instanceof LongNote
-									&& ((LongNote) n).isEnd())) {
+							if((ignoreLNEnd && ((LongNote) n).isEnd())) {
 								data[index][mode.isScratchKey(i) ? 0 : 3]++;
 								data[index][mode.isScratchKey(i) ? 1 : 4]--;									
 							}
-						}
-						if (n instanceof MineNote) {
+						} else if (n instanceof MineNote) {
 							data[index][6]++;
 							count++;
 						}
 						break;
 					case TYPE_JUDGE:
-						if (n instanceof MineNote || (model.getLntype() == BMSModel.LNTYPE_LONGNOTE && n instanceof LongNote
-								&& ((LongNote) n).isEnd())) {
+						if (n instanceof MineNote || (ignoreLNEnd && n instanceof LongNote && ((LongNote) n).isEnd())) {
 							break;
 						}
 						data[index][st]++;
 						count++;
 						break;
 					case TYPE_EARLYLATE:
-						if (n instanceof MineNote || (model.getLntype() == BMSModel.LNTYPE_LONGNOTE && n instanceof LongNote
-						&& ((LongNote) n).isEnd())) {
+						if (n instanceof MineNote || (ignoreLNEnd && n instanceof LongNote && ((LongNote) n).isEnd())) {
 							break;
 						}
 						if (st <= 1) {
@@ -312,54 +326,85 @@ public class SkinNoteDistributionGraph extends SkinObject {
 
 	}
 	
-	private void updateTexture() {
-		if (shapetex != null && !(state instanceof BMSPlayer)) {
-			shapetex.getTexture().dispose();
-			backtex.getTexture().dispose();
+	private void updateTexture(boolean updateall) {
+		final int oldw = shape != null ? shape.getWidth() : 0;
+		final int oldh = shape != null ? shape.getHeight() : 0;
+		final int w = data.length * 5;
+		final int h = max * 5;
+		boolean refresh = false;
+		if(shape == null) {
+			back = new Pixmap(w, h, Pixmap.Format.RGBA8888);									
+			shape = new Pixmap(w, h, Pixmap.Format.RGBA8888);
+			cursor = new Pixmap(w, h, Pixmap.Format.RGBA8888);
+			refresh = true;
+		} else if(oldw != w || oldh != h) {
+			back.dispose();				
 			shape.dispose();
-		}
-
-		if( shape == null || (shape != null && !(state instanceof BMSPlayer)) ) {
-			shape = new Pixmap(data.length * 5, max * 5, Pixmap.Format.RGBA8888);
-		} else {
+			cursor.dispose();
+			back = new Pixmap(w, h, Pixmap.Format.RGBA8888);									
+			shape = new Pixmap(w, h, Pixmap.Format.RGBA8888);						
+			cursor = new Pixmap(w, h, Pixmap.Format.RGBA8888);						
+			refresh = true;
+		} else if(updateall){
+			back.setColor(TRANSPARENT_COLOR);
+			back.fill();
 			shape.setColor(TRANSPARENT_COLOR);
 			shape.fill();
+			cursor.setColor(TRANSPARENT_COLOR);
+			cursor.fill();
+			refresh = true;
 		}
-		if(!isBackTexOff) {
-			shape.setColor(0, 0, 0, 0.8f);
-			shape.fill();
 
-			for (int i = 10; i < max; i += 10) {
-				shape.setColor(0.007f * i, 0.007f * i, 0, 1.0f);
-				shape.fillRectangle(0, i * 5, data.length * 5, 50);
-			}
+		int start = 0;
+		int end = data.length;
+		if(updateall) {
+			if(!isBackTexOff) {
+				back.setColor(0, 0, 0, 0.8f);
+				back.fill();
 
-			for (int i = 0; i < data.length; i++) {
-				// x軸補助線描画
-				if (i % 60 == 0) {
-					shape.setColor(Color.valueOf("444444"));
-					shape.drawLine(i * 5, 0, i * 5, max * 5);
-				} else if (i % 10 == 0) {
-					shape.setColor(Color.valueOf("222222"));
-					shape.drawLine(i * 5, 0, i * 5, max * 5);
+				for (int i = 10; i < max; i += 10) {
+					back.setColor(0.007f * i, 0.007f * i, 0, 1.0f);
+					back.fillRectangle(0, i * 5, data.length * 5, 50);
 				}
-			}
-		}
-		if( backtex == null || (backtex != null && !(state instanceof BMSPlayer)) ) {
-			backtex = new TextureRegion(new Texture(shape));
-		} else {
-			backtex.getTexture().draw(shape, 0, 0);
-		}
-		shape.setColor(TRANSPARENT_COLOR);
-		shape.fill();
 
-		for (int i = 0; i < data.length; i++) {
-			int[] n = data[i];
+				for (int i = 0; i < data.length; i++) {
+					// x軸補助線描画
+					if (i % 60 == 0) {
+						back.setColor(0.25f, 0.25f, 0.25f, 1.0f);
+						back.drawLine(i * 5, 0, i * 5, max * 5);
+					} else if (i % 10 == 0) {
+						back.setColor(0.125f, 0.125f, 0.125f, 1.0f);
+						back.drawLine(i * 5, 0, i * 5, max * 5);
+					}
+				}
+			} else if(!refresh){
+				for (int i = 0; i < data.length; i++) {
+					if(data[i][0] > 0) {
+						start = Math.max(0, i - 2);
+						end = Math.min(data.length, i + 3);
+						break;
+					}
+				}				
+			}
+			
+			if(backtex == null) {
+				backtex = new TextureRegion(new Texture(back));			
+			} else if(oldw != w || oldh != h) {
+				backtex.getTexture().dispose();
+				backtex = new TextureRegion(new Texture(back));
+			} else {
+				backtex.getTexture().draw(back, 0, 0);
+			}
+			
+		}
+
+		for (int i = start; i < end; i++) {
+			final int[] n = data[i];
 			if(!isOrderReverse) {
 				for (int j = 0, k = n[0], index = 0; j < max && index < n.length;) {
 					if (k > 0) {
 						k--;
-						shape.drawPixmap(chips[index], 0, 0, 1, 1, i * 5, j * 5, 4, 4 + (isNoGap ? 1 : 0));
+						shape.drawPixmap(chips[index], 0, 0, 1, 1, i * 5, j * 5, 4 + (isNoGapX ? 1 : 0), 4 + (isNoGap ? 1 : 0));
 						j++;
 					} else {
 						index++;
@@ -373,7 +418,7 @@ public class SkinNoteDistributionGraph extends SkinObject {
 				for (int j = 0, k = n[n.length - 1], index = n.length - 1; j < max && index < n.length;) {
 					if (k > 0) {
 						k--;
-						shape.drawPixmap(chips[index], 0, 0, 1, 1, i * 5, j * 5, 4, 4 + (isNoGap ? 1 : 0));
+						shape.drawPixmap(chips[index], 0, 0, 1, 1, i * 5, j * 5, 4 + (isNoGapX ? 1 : 0), 4 + (isNoGap ? 1 : 0));
 						j++;
 					} else {
 						index--;
@@ -385,7 +430,11 @@ public class SkinNoteDistributionGraph extends SkinObject {
 				}
 			}
 		}
-		if( shapetex == null || (shapetex != null && !(state instanceof BMSPlayer)) ) {
+		
+		if(shapetex == null) {
+			shapetex = new TextureRegion(new Texture(shape));
+		} else if(oldw != w || oldh != h) {
+			shapetex.getTexture().dispose();
 			shapetex = new TextureRegion(new Texture(shape));
 		} else {
 			shapetex.getTexture().draw(shape, 0, 0);
@@ -394,18 +443,14 @@ public class SkinNoteDistributionGraph extends SkinObject {
 
 	@Override
 	public void dispose() {
-		if (shapetex != null) {
-			backtex.getTexture().dispose();
-			shapetex.getTexture().dispose();
-			startcursor.getTexture().dispose();
-			endcursor.getTexture().dispose();
-			nowcursor.getTexture().dispose();
-			shape.dispose();
-			shapetex = null;
-		}
-		if(chips != null) {
-			disposeAll(chips);
-		}
+		Optional.ofNullable(backtex).ifPresent(t -> t.getTexture().dispose());
+		backtex = null;
+		Optional.ofNullable(shapetex).ifPresent(t -> t.getTexture().dispose());
+		shapetex = null;
+		Optional.ofNullable(cursortex).ifPresent(t -> t.getTexture().dispose());
+		cursortex = null;
+		Optional.ofNullable(chips).ifPresent(t -> Stream.of(t).forEach(Pixmap::dispose));
+		setDisposed();
 	}
 
 }

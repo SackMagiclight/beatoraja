@@ -2,10 +2,9 @@ package bms.player.beatoraja.result;
 
 import static bms.player.beatoraja.ClearType.*;
 import static bms.player.beatoraja.skin.SkinProperty.*;
+import static bms.player.beatoraja.SystemSoundManager.SoundType.*;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
+import java.util.*;
 import java.util.logging.Logger;
 
 import bms.player.beatoraja.input.KeyCommand;
@@ -14,14 +13,11 @@ import com.badlogic.gdx.utils.FloatArray;
 import bms.model.BMSModel;
 import bms.player.beatoraja.*;
 import bms.player.beatoraja.MainController.IRStatus;
-import bms.player.beatoraja.PlayerResource.PlayMode;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
-import bms.player.beatoraja.ir.IRConnection;
-import bms.player.beatoraja.ir.IRCourseData;
-import bms.player.beatoraja.ir.IRResponse;
-import bms.player.beatoraja.ir.RankingData;
-import bms.player.beatoraja.select.MusicSelector;
+import bms.player.beatoraja.input.KeyBoardInputProcesseor.ControlKeys;
+import bms.player.beatoraja.ir.*;
 import bms.player.beatoraja.skin.SkinType;
+import bms.player.beatoraja.skin.property.EventFactory.EventType;
 
 /**
  * コースリザルト
@@ -39,18 +35,10 @@ public class CourseResult extends AbstractResult {
 	}
 
 	public void create() {
-		final PlayerResource resource = main.getPlayerResource();
-
 		for(int i = 0;i < REPLAY_SIZE;i++) {
 			saveReplay[i] = main.getPlayDataAccessor().existsReplayData(resource.getCourseBMSModels(),
 					resource.getPlayerConfig().getLnmode(), i ,resource.getConstraint()) ? ReplayStatus.EXIST : ReplayStatus.NOT_EXIST ;
 		}
-
-		setSound(SOUND_CLEAR, "course_clear.wav", SoundType.SOUND,false);
-		setSound(SOUND_FAIL, "course_fail.wav", SoundType.SOUND, false);
-		setSound(SOUND_CLOSE, "course_close.wav", SoundType.SOUND, false);
-
-		loadSkin(SkinType.COURSE_RESULT);
 
 		for(int i = resource.getCourseGauge().size;i < resource.getCourseBMSModels().length;i++) {
 			FloatArray[] list = new FloatArray[resource.getGrooveGauge().getGaugeTypeLength()];
@@ -71,27 +59,28 @@ public class CourseResult extends AbstractResult {
 		updateScoreDatabase();
 
 		// リプレイの自動保存
-		if(resource.getPlayMode() == PlayMode.PLAY){
+		if(resource.getPlayMode().mode == BMSPlayerMode.Mode.PLAY){
 			for(int i=0;i<REPLAY_SIZE;i++){
-				if(MusicResult.ReplayAutoSaveConstraint.get(resource.getConfig().getAutoSaveReplay()[i]).isQualified(oldscore ,getNewScore())) {
+				if(MusicResult.ReplayAutoSaveConstraint.get(resource.getPlayerConfig().getAutoSaveReplay()[i]).isQualified(oldscore ,getNewScore())) {
 					saveReplayData(i);
 				}
 			}
 		}
 
 		gaugeType = resource.getGrooveGauge().getType();
+
+		loadSkin(SkinType.COURSE_RESULT);
 	}
 	
 	public void prepare() {
 		state = STATE_OFFLINE;
-		final PlayerResource resource = main.getPlayerResource();
 		final PlayerConfig config = resource.getPlayerConfig();
-		final IRScoreData newscore = getNewScore();
+		final ScoreData newscore = getNewScore();
 
-		ranking = resource.getRankingData() != null && resource.getCourseBMSModels() == null ? resource.getRankingData() : new RankingData();
-
+		ranking = resource.getRankingData() != null && resource.getCourseBMSModels() != null ? resource.getRankingData() : new RankingData();
+		rankingOffset = 0;
 		final IRStatus[] ir = main.getIRStatus();
-		if (ir.length > 0 && resource.getPlayMode() == PlayMode.PLAY) {
+		if (ir.length > 0 && resource.getPlayMode().mode == BMSPlayerMode.Mode.PLAY) {
 			state = STATE_IR_PROCESSING;
 			
 			boolean uln = false;
@@ -106,16 +95,15 @@ public class CourseResult extends AbstractResult {
         	for(IRStatus irc : ir) {
     			boolean send = resource.isUpdateCourseScore() && resource.getCourseData().isRelease();
     			switch(irc.config.getIrsend()) {
-    			case IRConfig.IR_SEND_ALWAYS:
-    				break;
-    			case IRConfig.IR_SEND_COMPLETE_SONG:
-//    				FloatArray gauge = resource.getGauge()[resource.getGrooveGauge().getType()];
-//    				send &= gauge.get(gauge.size - 1) > 0.0;
-    				break;
-    			case IRConfig.IR_SEND_UPDATE_SCORE:
-//    				send &= (newscore.getExscore() > oldscore.getExscore() || newscore.getClear() > oldscore.getClear()
-//    						|| newscore.getCombo() > oldscore.getCombo() || newscore.getMinbp() < oldscore.getMinbp());
-    				break;
+	    			case IRConfig.IR_SEND_ALWAYS -> {}
+	    			case IRConfig.IR_SEND_COMPLETE_SONG -> {
+	//    				FloatArray gauge = resource.getGauge()[resource.getGrooveGauge().getType()];
+	//    				send &= gauge.get(gauge.size - 1) > 0.0;
+	    			}
+	    			case IRConfig.IR_SEND_UPDATE_SCORE -> {
+	//    				send &= (newscore.getExscore() > oldscore.getExscore() || newscore.getClear() > oldscore.getClear()
+	//					|| newscore.getCombo() > oldscore.getCombo() || newscore.getMinbp() < oldscore.getMinbp());    				
+	    			}
     			}
     			
     			if(send) {
@@ -124,135 +112,137 @@ public class CourseResult extends AbstractResult {
         	}
 
 			Thread irprocess = new Thread(() -> {
-				try {
-                	int irsend = 0;
-                	boolean succeed = true;
-                	List<IRSendStatus> removeIrSendStatus = new ArrayList<IRSendStatus>();
-                	
-                	for(IRSendStatus irc : irSendStatus) {
-        				if(irsend == 0) {
-        					main.switchTimer(TIMER_IR_CONNECT_BEGIN, true);                					
-        				}
-        				irsend++;
-                        succeed &= irc.send();
-                        if(irc.retry < 0 || irc.retry > main.getConfig().getIrSendCount()) {
-                        	removeIrSendStatus.add(irc);
-                        }
-                	}
-                	irSendStatus.removeAll(removeIrSendStatus);
-                	
-                	if(irsend > 0) {
-                        main.switchTimer(succeed ? TIMER_IR_CONNECT_SUCCESS : TIMER_IR_CONNECT_FAIL, true);
+				int irsend = 0;
+				boolean succeed = true;
+				List<IRSendStatus> removeIrSendStatus = new ArrayList<>();
 
-                        IRResponse<bms.player.beatoraja.ir.IRScoreData[]> response = ir[0].connection.getCoursePlayData(null, new IRCourseData(resource.getCourseData(), lnmode));
-						if(response.isSucceeded()) {
-                    		ranking.updateScore(response.getData(), newscore.getExscore() > oldscore.getExscore() ? newscore : oldscore);                    		
-							Logger.getGlobal().warning("IRからのスコア取得成功 : " + response.getMessage());
+				for (IRSendStatus irc : irSendStatus) {
+					try {
+						if (irsend == 0) {
+							timer.switchTimer(TIMER_IR_CONNECT_BEGIN, true);
+						}
+						irsend++;
+						succeed &= irc.send();
+						if (irc.retry < 0 || irc.retry > main.getConfig().getIrSendCount()) {
+							removeIrSendStatus.add(irc);
+						}
+					} catch (Exception e) {
+						Logger.getGlobal().warning("IR送信時の例外:" + e.getMessage());
+						e.printStackTrace();
+						// remove from queue
+						removeIrSendStatus.add(irc);
+					}
+				}
+				irSendStatus.removeAll(removeIrSendStatus);
+
+				if (irsend > 0) {
+					timer.switchTimer(succeed ? TIMER_IR_CONNECT_SUCCESS : TIMER_IR_CONNECT_FAIL, true);
+					try {
+						IRResponse<bms.player.beatoraja.ir.IRScoreData[]> response = ir[0].connection.getCoursePlayData(null, new IRCourseData(resource.getCourseData(), lnmode));
+						if (response.isSucceeded()) {
+							ranking.updateScore(ir[0].player, main.getRivalDataAccessor(), response.getData(), newscore.getExscore() > oldscore.getExscore() ? newscore : oldscore);
+							rankingOffset = ranking.getRank() > 10 ? ranking.getRank() - 5 : 0;
+							Logger.getGlobal().info("IRからのスコア取得成功 : " + response.getMessage());
 						} else {
 							Logger.getGlobal().warning("IRからのスコア取得失敗 : " + response.getMessage());
-						}	                    		
-                	}
-				} catch (Exception e) {
-					Logger.getGlobal().severe(e.getMessage());
-				} finally {
-					state = STATE_IR_FINISHED;
+						}
+					} catch (Exception e) {
+						Logger.getGlobal().warning("IRからのスコア取得時例外:" + e.getMessage());
+						e.printStackTrace();
+					}
 				}
+				state = STATE_IR_FINISHED;
 			});
 			irprocess.start();
 		}
 
-		play(newscore.getClear() != Failed.id ? SOUND_CLEAR : SOUND_FAIL);
+		play(newscore.getClear() != Failed.id ? (getSound(COURSE_CLEAR) != null ? COURSE_CLEAR : RESULT_CLEAR)
+				: (getSound(COURSE_FAIL) != null ? COURSE_FAIL : RESULT_FAIL), resource.getConfig().getAudioConfig().isLoopCourseResultSound());
+	}
+
+	public void shutdown() {
+		stop(getSound(COURSE_CLEAR) != null ? COURSE_CLEAR : RESULT_CLEAR);
+		stop(getSound(COURSE_FAIL) != null ? COURSE_FAIL : RESULT_FAIL);
+		stop(getSound(COURSE_CLOSE) != null ? COURSE_CLOSE : RESULT_CLOSE);
 	}
 
 	public void render() {
-		long time = main.getNowTime();
-		main.switchTimer(TIMER_RESULTGRAPH_BEGIN, true);
-		main.switchTimer(TIMER_RESULTGRAPH_END, true);
-		main.switchTimer(TIMER_RESULT_UPDATESCORE, true);
+		long time = timer.getNowTime();
+		timer.switchTimer(TIMER_RESULTGRAPH_BEGIN, true);
+		timer.switchTimer(TIMER_RESULTGRAPH_END, true);
+		timer.switchTimer(TIMER_RESULT_UPDATESCORE, true);
 
 		if(time > getSkin().getInput()){
-			main.switchTimer(TIMER_STARTINPUT, true);
+			timer.switchTimer(TIMER_STARTINPUT, true);
 		}
 
-		if (main.isTimerOn(TIMER_FADEOUT)) {
-			if (main.getNowTime(TIMER_FADEOUT) > getSkin().getFadeout()) {
-				main.getPlayerResource().getPlayerConfig().setGauge(main.getPlayerResource().getOrgGaugeOption());
-				stop(SOUND_CLEAR);
-				stop(SOUND_FAIL);
-				stop(SOUND_CLOSE);
+		if (timer.isTimerOn(TIMER_FADEOUT)) {
+			if (timer.getNowTime(TIMER_FADEOUT) > getSkin().getFadeout()) {
+				resource.getPlayerConfig().setGauge(resource.getOrgGaugeOption());
 				main.changeState(MainStateType.MUSICSELECT);
 			}
 		} else if (time > getSkin().getScene()) {
-			main.switchTimer(TIMER_FADEOUT, true);
-			if(getSound(SOUND_CLOSE) != null) {
-				stop(SOUND_CLEAR);
-				stop(SOUND_FAIL);
-				play(SOUND_CLOSE);
+			timer.switchTimer(TIMER_FADEOUT, true);
+			if(getSound(COURSE_CLOSE) != null || getSound(RESULT_CLOSE) != null) {
+				stop(getSound(COURSE_CLEAR) != null ? COURSE_CLEAR : RESULT_CLEAR);
+				stop(getSound(COURSE_FAIL) != null ? COURSE_FAIL : RESULT_FAIL);
+				play(getSound(COURSE_CLOSE) != null ? COURSE_CLOSE : RESULT_CLOSE);
 			}
 		}
 
 	}
 
 	public void input() {
-		final PlayerResource resource = main.getPlayerResource();
+		super.input();
 		final BMSPlayerInputProcessor inputProcessor = main.getInputProcessor();
 
-		if (!main.isTimerOn(TIMER_FADEOUT) && main.isTimerOn(TIMER_STARTINPUT)) {
-			boolean[] keystate = inputProcessor.getKeystate();
-			long[] keytime = inputProcessor.getTime();
-
+		if (!timer.isTimerOn(TIMER_FADEOUT) && timer.isTimerOn(TIMER_STARTINPUT)) {
 			boolean ok = false;
 			for (int i = 0; i < property.getAssignLength(); i++) {
-				if (property.getAssign(i) == ResultKeyProperty.ResultKey.CHANGE_GRAPH && keystate[i] && keytime[i] != 0) {
+				if (property.getAssign(i) == ResultKeyProperty.ResultKey.CHANGE_GRAPH && inputProcessor.getKeyState(i) && inputProcessor.resetKeyChangedTime(i)) {
 					gaugeType = (gaugeType - 5) % 3 + 6;
-					keytime[i] = 0;
-				} else if (property.getAssign(i) != null && keystate[i] && keytime[i] != 0) {
-					keytime[i] = 0;
+				} else if (property.getAssign(i) != null && inputProcessor.getKeyState(i) && inputProcessor.resetKeyChangedTime(i)) {
 					ok = true;
 				}
 			}
 
-			if (inputProcessor.isEnterPressed()) {
+			if (inputProcessor.isControlKeyPressed(ControlKeys.ESCAPE) || inputProcessor.isControlKeyPressed(ControlKeys.ENTER)) {
 				ok = true;
-				inputProcessor.setEnterPressed(false);
-			}
-
-			if (inputProcessor.isExitPressed()) {
-				ok = true;
-				inputProcessor.setExitPressed(false);
-			}
+			} 
 
 			if (resource.getScoreData() == null || ok) {
-				if (((CourseResultSkin) getSkin()).getRankTime() != 0 && !main.isTimerOn(TIMER_RESULT_UPDATESCORE)) {
-					main.switchTimer(TIMER_RESULT_UPDATESCORE, true);
+				if (((CourseResultSkin) getSkin()).getRankTime() != 0 && !timer.isTimerOn(TIMER_RESULT_UPDATESCORE)) {
+					timer.switchTimer(TIMER_RESULT_UPDATESCORE, true);
 				} else if (state == STATE_OFFLINE || state == STATE_IR_FINISHED){
-					main.switchTimer(TIMER_FADEOUT, true);
-					if(getSound(SOUND_CLOSE) != null) {
-						stop(SOUND_CLEAR);
-						stop(SOUND_FAIL);
-						play(SOUND_CLOSE);
+					timer.switchTimer(TIMER_FADEOUT, true);
+					if(getSound(COURSE_CLOSE) != null || getSound(RESULT_CLOSE) != null) {
+						stop(getSound(COURSE_CLEAR) != null ? COURSE_CLEAR : RESULT_CLEAR);
+						stop(getSound(COURSE_FAIL) != null ? COURSE_FAIL : RESULT_FAIL);
+						play(getSound(COURSE_CLOSE) != null ? COURSE_CLOSE : RESULT_CLOSE);
 					}
 				}
 			}
 
-			for (int i = 0; i < MusicSelector.REPLAY; i++) {
-				if (inputProcessor.getNumberState()[i + 1]) {
-					saveReplayData(i);
-					break;
-				}
+			if(inputProcessor.isControlKeyPressed(ControlKeys.NUM1)) {
+				saveReplayData(0);				
+			} else if(inputProcessor.isControlKeyPressed(ControlKeys.NUM2)) {
+				saveReplayData(1);				
+			} else if(inputProcessor.isControlKeyPressed(ControlKeys.NUM3)) {
+				saveReplayData(2);				
+			} else if(inputProcessor.isControlKeyPressed(ControlKeys.NUM4)) {
+				saveReplayData(3);				
 			}
 
 			if(inputProcessor.isActivated(KeyCommand.OPEN_IR)) {
-				this.execute(CourseResultCommand.OPEN_RANKING_ON_IR);
+				this.executeEvent(EventType.open_ir);
 			}
 		}
 	}
 
 	public void updateScoreDatabase() {
-		final PlayerResource resource = main.getPlayerResource();
 		final PlayerConfig config = resource.getPlayerConfig();
 		BMSModel[] models = resource.getCourseBMSModels();
-		final IRScoreData newscore = getNewScore();
+		final ScoreData newscore = getNewScore();
 		if (newscore == null) {
 			return;
 		}
@@ -261,6 +251,7 @@ public class CourseResult extends AbstractResult {
 			dp |= model.getMode().player == 2;
 		}
 		newscore.setCombo(resource.getMaxcombo());
+		newscore.setAvgjudge(newscore.getTotalDuration() / newscore.getNotes());
 		int random = 0;
 		if (config.getRandom() > 0
 				|| (dp && (config.getRandom2() > 0 || config.getDoubleoption() > 0))) {
@@ -270,15 +261,15 @@ public class CourseResult extends AbstractResult {
 				&& (!dp || (config.getRandom2() == 1 && config.getDoubleoption() == 1))) {
 			random = 1;
 		}
-		final IRScoreData score = main.getPlayDataAccessor().readScoreData(models,
+		final ScoreData score = main.getPlayDataAccessor().readScoreData(models,
 				config.getLnmode(), random, resource.getConstraint());
-		oldscore = score != null ? score : new IRScoreData();
+		oldscore = score != null ? score : new ScoreData();
 
-		getScoreDataProperty().setTargetScore(oldscore.getExscore(), resource.getRivalScoreData(),
+		getScoreDataProperty().setTargetScore(oldscore.getExscore(), resource.getTargetScoreData() != null ? resource.getTargetScoreData().getExscore() : 0,
 				Arrays.asList(resource.getCourseData().getSong()).stream().mapToInt(sd -> sd.getNotes()).sum());
 		getScoreDataProperty().update(newscore);
 
-		main.getPlayDataAccessor().writeScoreDara(newscore, models, config.getLnmode(),
+		main.getPlayDataAccessor().writeScoreData(newscore, models, config.getLnmode(),
 				random, resource.getConstraint(), resource.isUpdateCourseScore());
 
 
@@ -286,25 +277,8 @@ public class CourseResult extends AbstractResult {
 	}
 
 	public int getJudgeCount(int judge, boolean fast) {
-		final PlayerResource resource = main.getPlayerResource();
-		IRScoreData score = resource.getCourseScoreData();
-		if (score != null) {
-			switch (judge) {
-				case 0:
-					return fast ? score.getEpg() : score.getLpg();
-				case 1:
-					return fast ? score.getEgr() : score.getLgr();
-				case 2:
-					return fast ? score.getEgd() : score.getLgd();
-				case 3:
-					return fast ? score.getEbd() : score.getLbd();
-				case 4:
-					return fast ? score.getEpr() : score.getLpr();
-				case 5:
-					return fast ? score.getEms() : score.getLms();
-			}
-		}
-		return 0;
+		final ScoreData score = resource.getCourseScoreData();		
+		return score != null ? score.getJudgeCount(judge, fast) : 0;
 	}
 
 	@Override
@@ -312,9 +286,8 @@ public class CourseResult extends AbstractResult {
 		super.dispose();
 	}
 
-	private void saveReplayData(int index) {
-		final PlayerResource resource = main.getPlayerResource();
-		if (resource.getPlayMode() == PlayMode.PLAY && resource.getCourseScoreData() != null) {
+	public void saveReplayData(int index) {
+		if (resource.getPlayMode().mode == BMSPlayerMode.Mode.PLAY && resource.getCourseScoreData() != null) {
 			if (saveReplay[index] != ReplayStatus.SAVED && resource.isUpdateCourseScore()) {
 				// 保存されているリプレイデータがない場合は、EASY以上で自動保存
 				ReplayData[] rd = resource.getCourseReplay();
@@ -328,44 +301,18 @@ public class CourseResult extends AbstractResult {
 		}
 	}
 
-	public void executeEvent(int id, int arg1, int arg2) {
-		switch (id) {
-		case BUTTON_REPLAY:
-			saveReplayData(0);
-			break;
-		case BUTTON_REPLAY2:
-			saveReplayData(1);
-			break;
-		case BUTTON_REPLAY3:
-			saveReplayData(2);
-			break;
-		case BUTTON_REPLAY4:
-			saveReplayData(3);
-			break;
-		case BUTTON_OPEN_IR_WEBSITE:
-			execute(CourseResultCommand.OPEN_RANKING_ON_IR);
-			break;
-		default:
-			super.executeEvent(id, arg1, arg2);
-		}
-	}
-	
-	public IRScoreData getNewScore() {
-		return main.getPlayerResource().getCourseScoreData();
+	public ScoreData getNewScore() {
+		return resource.getCourseScoreData();
 	}
 
-	public void execute(CourseResultCommand command) {
-		command.execute(this);
-	}
-	
 	static class IRSendStatus {
 		public final IRConnection ir;
 		public final CourseData course;
 		public final int lnmode;
-		public final IRScoreData score;
+		public final ScoreData score;
 		public int retry = 0;
 		
-		public IRSendStatus(IRConnection ir, CourseData course, int lnmode, IRScoreData score) {
+		public IRSendStatus(IRConnection ir, CourseData course, int lnmode, ScoreData score) {
 			this.ir = ir;
 			this.course = course;
 			this.lnmode = lnmode;

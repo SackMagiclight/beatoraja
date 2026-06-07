@@ -6,6 +6,7 @@ import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.util.*;
 import java.util.logging.Logger;
+import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -15,7 +16,7 @@ import static bms.player.beatoraja.ClearType.*;
 import static bms.player.beatoraja.CourseData.CourseDataConstraint.*;
 
 import bms.player.beatoraja.CourseData.CourseDataConstraint;
-import bms.player.beatoraja.IRScoreData.SongTrophy;
+import bms.player.beatoraja.ScoreData.SongTrophy;
 import bms.player.beatoraja.ScoreDatabaseAccessor.ScoreDataCollector;
 import bms.player.beatoraja.ScoreLogDatabaseAccessor.ScoreLog;
 import bms.player.beatoraja.song.SongData;
@@ -29,10 +30,9 @@ import com.badlogic.gdx.utils.StringBuilder;
  * 
  * @author exch
  */
-public class PlayDataAccessor {
+public final class PlayDataAccessor {
 
 	// TODO スコアハッシュを付与するかどうかの判定(前のスコアハッシュの正当性を確認できなかった時)
-	// TODO リプレイ暗号、復号化
 	// TODO BATTLEは別ハッシュで登録したい}			
 
 	private final String hashkey;
@@ -53,6 +53,10 @@ public class PlayDataAccessor {
 	 * スコアログアクセサ
 	 */
 	private ScoreLogDatabaseAccessor scorelogdb;
+	/**
+	 * スコアデータログアクセサ
+	 */
+	private ScoreDataLogDatabaseAccessor scoredatalogdb;
 
 
 	private static final String[] replay = { "", "C", "H" };
@@ -66,6 +70,7 @@ public class PlayDataAccessor {
 			scoredb = new ScoreDatabaseAccessor(playerpath + File.separatorChar + player + File.separatorChar + "score.db");
 			scoredb.createTable();
 			scorelogdb = new ScoreLogDatabaseAccessor(playerpath + File.separatorChar + player + File.separatorChar + "scorelog.db");
+			scoredatalogdb = new ScoreDataLogDatabaseAccessor(playerpath + File.separatorChar + player + File.separatorChar + "scoredatalog.db");
 		} catch (ClassNotFoundException e) {
 			e.printStackTrace();
 		}
@@ -108,7 +113,7 @@ public class PlayDataAccessor {
 	 * @param score スコアデータ
 	 * @param time プレイ時間
 	 */
-	public void updatePlayerData(IRScoreData score, long time) {
+	public void updatePlayerData(ScoreData score, long time) {
 		PlayerData pd = readPlayerData();
 		pd.setEpg(pd.getEpg() + score.getEpg());
 		pd.setLpg(pd.getLpg() + score.getLpg());
@@ -140,7 +145,7 @@ public class PlayDataAccessor {
 	 *            LNモード
 	 * @return スコアデータ
 	 */
-	public IRScoreData readScoreData(BMSModel model, int lnmode) {
+	public ScoreData readScoreData(BMSModel model, int lnmode) {
 		String hash = model.getSHA256();
 		boolean ln = model.containsUndefinedLongNote();
 		return readScoreData(hash, ln, lnmode);
@@ -157,7 +162,7 @@ public class PlayDataAccessor {
 	 *            LNモード
 	 * @return スコアデータ
 	 */
-	public IRScoreData readScoreData(String hash, boolean ln, int lnmode) {
+	public ScoreData readScoreData(String hash, boolean ln, int lnmode) {
 		return scoredb.getScoreData(hash, ln ? lnmode : 0);
 	}
 
@@ -171,7 +176,7 @@ public class PlayDataAccessor {
 		scoredb.getScoreDatas(collector, songs, lnmode);
 	}
 
-	public List<IRScoreData> readScoreDatas(String sql) {
+	public List<ScoreData> readScoreDatas(String sql) {
 		return scoredb.getScoreDatas(sql);
 	}
 
@@ -187,15 +192,15 @@ public class PlayDataAccessor {
 	 * @param updateScore
 	 *            プレイ回数のみ反映する場合はfalse
 	 */
-	public void writeScoreDara(IRScoreData newscore, BMSModel model, int lnmode, boolean updateScore) {
+	public void writeScoreData(ScoreData newscore, BMSModel model, int lnmode, boolean updateScore) {
 		String hash = model.getSHA256();
 		if (newscore == null) {
 			return;
 		}
-		IRScoreData score = scoredb.getScoreData(hash, model.containsUndefinedLongNote() ? lnmode : 0);
+		ScoreData score = scoredb.getScoreData(hash, model.containsUndefinedLongNote() ? lnmode : 0);
 
 		if (score == null) {
-			score = new IRScoreData();
+			score = new ScoreData();
 			score.setMode(model.containsUndefinedLongNote() ? lnmode : 0);
 		}
 		score.setSha256(hash);
@@ -216,19 +221,21 @@ public class PlayDataAccessor {
 				l.add(trophy);
 			}
 		}
+
+		Set<SongTrophy> newTrophies = new HashSet<SongTrophy>();
 		// クリアトロフィー
 		int clear = newscore.getClear();
 		if(newscore.getGauge() != -1) {			
 			if(clear >= Hard.id){
 				if(clear == ExHard.id) {
-					l.add(SongTrophy.EXHARD);
+					newTrophies.add(SongTrophy.EXHARD);
 				}
-				l.add(SongTrophy.HARD);
+				newTrophies.add(SongTrophy.HARD);
 			} else {
 				if(clear >= Normal.id) {
-					l.add(SongTrophy.GROOVE);
+					newTrophies.add(SongTrophy.GROOVE);
 				}
-				l.add(SongTrophy.EASY);
+				newTrophies.add(SongTrophy.EASY);
 			}
 		}
 			
@@ -239,8 +246,11 @@ public class PlayDataAccessor {
 				,SongTrophy.EX_S_RANDOM};
 			
 		if(clear >= Easy.id) {
-			l.add(optionTrophy[Math.max(newscore.getOption() % 10, (newscore.getOption() / 10) % 10)]);
+			newTrophies.add(optionTrophy[Math.max(newscore.getOption() % 10, (newscore.getOption() / 10) % 10)]);
 		}
+
+		// newscore のトロフィーをマージ
+		l.addAll(newTrophies);
 		
 		StringBuilder sb = new StringBuilder();
 		for(SongTrophy trophy : l) {
@@ -258,6 +268,21 @@ public class PlayDataAccessor {
 			scorelogdb.setScoreLog(log);
 		}
 
+		if (scoredatalogdb != null) {
+			StringBuilder newScoresb = new StringBuilder();
+			for(SongTrophy trophy : newTrophies) {
+				newScoresb.append(trophy.character);
+			}
+			newscore.setTrophy(newScoresb.toString());
+			newscore.setMode(score.getMode());
+			newscore.setDate(score.getDate());
+			newscore.setPlaycount(score.getPlaycount());
+			newscore.setClearcount(score.getClearcount());
+			newscore.setScorehash(getScoreHash(newscore));
+
+			scoredatalogdb.setScoreDataLog(newscore);
+		}
+
 		// 楽曲のプレイ時間算出(秒)
 		long time = 0;
 		for (TimeLine tl : model.getAllTimeLines()) {
@@ -271,7 +296,7 @@ public class PlayDataAccessor {
 		Logger.getGlobal().info("スコアデータベース更新完了 ");
 	}
 	
-	public IRScoreData readScoreData(String hash, boolean ln, int lnmode, int option,
+	public ScoreData readScoreData(String hash, boolean ln, int lnmode, int option,
 			CourseData.CourseDataConstraint[] constraint) {
 		int hispeed = 0;
 		int judge = 0;
@@ -309,7 +334,7 @@ public class PlayDataAccessor {
 		return scoredb.getScoreData(hash, (ln ? lnmode : 0) + option * 10 + hispeed * 100 + judge * 1000 + gauge * 10000);
 	}
 
-	public IRScoreData readScoreData(BMSModel[] models, int lnmode, int option,
+	public ScoreData readScoreData(BMSModel[] models, int lnmode, int option,
 			CourseData.CourseDataConstraint[] constraint) {
 		String[] hash = new String[models.length];
 		boolean ln = false;
@@ -320,7 +345,7 @@ public class PlayDataAccessor {
 		return readScoreData(hash, ln, lnmode, option, constraint);
 	}
 
-	public IRScoreData readScoreData(String[] hashes, boolean ln, int lnmode, int option,
+	public ScoreData readScoreData(String[] hashes, boolean ln, int lnmode, int option,
 			CourseData.CourseDataConstraint[] constraint) {
 		String hash = "";
 		for (String s : hashes) {
@@ -329,7 +354,10 @@ public class PlayDataAccessor {
 		return readScoreData(hash, ln, lnmode, option, constraint);
 	}
 
-	public void writeScoreDara(IRScoreData newscore, BMSModel[] models, int lnmode, int option,
+	/**
+	 * コーススコアデータを書き込む
+	 */
+	public void writeScoreData(ScoreData newscore, BMSModel[] models, int lnmode, int option,
 			CourseData.CourseDataConstraint[] constraint, boolean updateScore) {
 		String hash = "";
 		int totalnotes = 0;
@@ -375,10 +403,10 @@ public class PlayDataAccessor {
 				break;
 			}
 		}
-		IRScoreData score = scoredb.getScoreData(hash, (ln ? lnmode : 0) + option * 10 + hispeed * 100 + judge * 1000 + gauge * 10000);
+		ScoreData score = scoredb.getScoreData(hash, (ln ? lnmode : 0) + option * 10 + hispeed * 100 + judge * 1000 + gauge * 10000);
 
 		if (score == null) {
-			score = new IRScoreData();
+			score = new ScoreData();
 			score.setMode((ln ? lnmode : 0) + option * 10 + hispeed * 100 + judge * 1000 + gauge * 10000);
 		}
 		score.setSha256(hash);
@@ -404,7 +432,7 @@ public class PlayDataAccessor {
 
 	}
 
-	private String getScoreHash(IRScoreData score) {
+	private String getScoreHash(ScoreData score) {
 		byte[] cipher_byte;
 		try {
 			MessageDigest md = MessageDigest.getInstance("SHA-256");
@@ -427,54 +455,35 @@ public class PlayDataAccessor {
 		return null;
 	}
 
-	private ScoreLog updateScore(IRScoreData score, IRScoreData newscore, String hash, boolean updateScore) {
+	private ScoreLog updateScore(ScoreData score, ScoreData newscore, String hash, boolean updateScore) {
 		ScoreLog log = new ScoreLog();
 		
-		final int clear = score.getClear();
-		log.setOldclear(clear);
-		log.setClear(clear);
-		if (clear < newscore.getClear()) {
-			score.setClear(newscore.getClear());
-			score.setOption(newscore.getOption());
+		log.setOldclear(score.getClear());
+		log.setClear(score.getClear());
+		if (score.getClear() < newscore.getClear()) {
 			log.setSha256(hash);
 			log.setClear(newscore.getClear());
 		}
 		log.setOldscore(score.getExscore());
 		log.setScore(score.getExscore());
 		if (score.getExscore() < newscore.getExscore() && updateScore) {
-			score.setEpg(newscore.getEpg());
-			score.setLpg(newscore.getLpg());
-			score.setEgr(newscore.getEgr());
-			score.setLgr(newscore.getLgr());
-			score.setEgd(newscore.getEgd());
-			score.setLgd(newscore.getLgd());
-			score.setEbd(newscore.getEbd());
-			score.setLbd(newscore.getLbd());
-			score.setEpr(newscore.getEpr());
-			score.setLpr(newscore.getLpr());
-			score.setEms(newscore.getEms());
-			score.setLms(newscore.getLms());
-			score.setOption(newscore.getOption());
-			score.setGhost(newscore.getGhost());
 			log.setSha256(hash);
 			log.setScore(newscore.getExscore());
 		}
 		log.setOldminbp(score.getMinbp());
 		log.setMinbp(score.getMinbp());
 		if (score.getMinbp() > newscore.getMinbp() && updateScore) {
-			score.setMinbp(newscore.getMinbp());
-			score.setOption(newscore.getOption());
 			log.setSha256(hash);
 			log.setMinbp(newscore.getMinbp());
 		}
 		log.setOldcombo(score.getCombo());
 		log.setCombo(score.getCombo());
 		if (score.getCombo() < newscore.getCombo() && updateScore) {
-			score.setCombo(newscore.getCombo());
-			score.setOption(newscore.getOption());
 			log.setSha256(hash);
 			log.setCombo(newscore.getCombo());
 		}
+		
+		score.update(newscore, updateScore);
 
 		return log;
 	}
@@ -558,6 +567,7 @@ public class PlayDataAccessor {
 		json.setOutputType(OutputType.json);
 		try {
 			String path = this.getReplayDataFilePath(model, lnmode, index) + ".brd";
+			rd.shrink();
 			OutputStreamWriter fw = new OutputStreamWriter(
 					new BufferedOutputStream(new GZIPOutputStream(new FileOutputStream(path))), "UTF-8");
 			fw.write(json.prettyPrint(rd));
@@ -645,6 +655,7 @@ public class PlayDataAccessor {
 		json.setOutputType(OutputType.json);
 		try {
 			String path = this.getReplayDataFilePath(hash, ln, lnmode, index, constraint) + ".brd";
+			Stream.of(rd).forEach(ReplayData::shrink);
 			OutputStreamWriter fw = new OutputStreamWriter(
 					new BufferedOutputStream(new GZIPOutputStream(new FileOutputStream(path))), "UTF-8");
 			fw.write(json.prettyPrint(rd));

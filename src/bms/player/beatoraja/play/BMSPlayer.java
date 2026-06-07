@@ -2,6 +2,7 @@ package bms.player.beatoraja.play;
 
 import static bms.player.beatoraja.CourseData.CourseDataConstraint.*;
 import static bms.player.beatoraja.skin.SkinProperty.*;
+import static bms.player.beatoraja.SystemSoundManager.SoundType.*;
 
 import java.nio.file.Path;
 import java.util.*;
@@ -12,10 +13,11 @@ import com.badlogic.gdx.utils.FloatArray;
 
 import bms.model.*;
 import bms.player.beatoraja.*;
-import bms.player.beatoraja.PlayerResource.PlayMode;
+import bms.player.beatoraja.audio.AudioDriver;
+import bms.player.beatoraja.AudioConfig.FrequencyType;
 import bms.player.beatoraja.input.*;
 import bms.player.beatoraja.pattern.*;
-import bms.player.beatoraja.pattern.Random;
+import bms.player.beatoraja.pattern.LaneShuffleModifier.*;
 import bms.player.beatoraja.play.PracticeConfiguration.PracticeProperty;
 import bms.player.beatoraja.play.bga.BGAProcessor;
 import bms.player.beatoraja.skin.SkinType;
@@ -26,8 +28,6 @@ import bms.player.beatoraja.skin.SkinType;
  * @author exch
  */
 public class BMSPlayer extends MainState {
-
-	// TODO GLAssistから起動すると楽曲ロード中に止まる
 
 	private BMSModel model;
 
@@ -51,8 +51,10 @@ public class BMSPlayer extends MainState {
 
 	private int assist = 0;
 
-	private List<PatternModifyLog> pattern = new ArrayList<PatternModifyLog>();
-
+	private ReplayData playinfo = new ReplayData();
+	/**
+	 * リプレイデータ
+	 */
 	private ReplayData replay = null;
 
 	private final FloatArray[] gaugelog;
@@ -60,34 +62,62 @@ public class BMSPlayer extends MainState {
 	private int playspeed = 100;
 
 	/**
-	 * 処理済ノート数
-	 */
-	private int notes;
-	/**
-	 * PMS キャラ用 ニュートラルモーション開始時の処理済ノート数{1P,2P} (ニュートラルモーション一周時に変化がなければニュートラルモーションを継続するため)
-	 */
-	private int[] PMcharaLastnotes = {0, 0};
-	/**
 	 * リプレイHS保存用 STATE READY時に保存
 	 */
 	private PlayConfig replayConfig;
 
 	static final int TIME_MARGIN = 5000;
 
-	public static final int SOUND_READY = 0;
-	public static final int SOUND_PLAYSTOP = 1;
+	private int state = STATE_PRELOAD;
+
+	public static final int STATE_PRELOAD = 0;
+	public static final int STATE_PRACTICE = 1;
+	public static final int STATE_PRACTICE_FINISHED = 2;
+	public static final int STATE_READY = 3;
+	public static final int STATE_PLAY = 4;
+	public static final int STATE_FAILED = 5;
+	public static final int STATE_FINISHED = 6;
+
+	private long prevtime;
+
+	private PracticeConfiguration practice = new PracticeConfiguration();
+	private long starttimeoffset;
+
+	private RhythmTimerProcessor rhythm;
+	private long startpressedtime;
 
 	public BMSPlayer(MainController main, PlayerResource resource) {
 		super(main);
 		this.model = resource.getBMSModel();
-		PlayMode autoplay = resource.getPlayMode();
+		BMSPlayerMode autoplay = resource.getPlayMode();
 		PlayerConfig config = resource.getPlayerConfig();
 
-		if (autoplay.isReplayMode()) {
+		playinfo.randomoption = config.getRandom();
+		playinfo.randomoption2 = config.getRandom2();
+		playinfo.doubleoption = config.getDoubleoption();
+
+		ReplayData HSReplay = null;
+
+		if(resource.getChartOption() != null) {
+			ReplayData chartOption = resource.getChartOption();
+			playinfo.randomoption = chartOption.randomoption;
+			playinfo.randomoptionseed = chartOption.randomoptionseed;
+			playinfo.randomoption2 = chartOption.randomoption2;
+			playinfo.randomoption2seed = chartOption.randomoption2seed;
+			playinfo.doubleoption = chartOption.doubleoption;
+			playinfo.rand = chartOption.rand;
+			Logger.getGlobal().info("譜面再現 : op1 - " + playinfo.randomoption + " seed1 - " + playinfo.randomoptionseed
+					 + " op2 - " + playinfo.randomoption2 + " seed2 - " + playinfo.randomoption2seed + " opdp - "+ playinfo.doubleoption
+					 + " random - " + Arrays.toString(playinfo.rand));
+		}
+
+		if (autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
 			if (resource.getCourseBMSModels() != null) {
+				// コースモードのリプレイ読み込み
 				if (resource.getCourseReplay().length == 0) {
+					// コースモード1曲目の処理
 					ReplayData[] replays = main.getPlayDataAccessor().readReplayData(resource.getCourseBMSModels(),
-							config.getLnmode(), autoplay.getReplayIndex(), resource.getConstraint());
+							config.getLnmode(), autoplay.id, resource.getConstraint());
 					if (replays != null) {
 						for (ReplayData rd : replays) {
 							resource.addCourseReplay(rd);
@@ -95,10 +125,11 @@ public class BMSPlayer extends MainState {
 						replay = replays[0];
 					} else {
 						Logger.getGlobal().info("リプレイデータを読み込めなかったため、通常プレイモードに移行");
-						autoplay = PlayMode.PLAY;
+						autoplay = BMSPlayerMode.PLAY;
 						resource.setPlayMode(autoplay);
 					}
 				} else {
+					// 2曲目以降の処理
 					for (int i = 0; i < resource.getCourseBMSModels().length; i++) {
 						if (resource.getCourseBMSModels()[i].getMD5().equals(resource.getBMSModel().getMD5())) {
 							replay = resource.getCourseReplay()[i];
@@ -106,72 +137,80 @@ public class BMSPlayer extends MainState {
 					}
 				}
 			} else {
-				replay = main.getPlayDataAccessor().readReplayData(model, config.getLnmode(), autoplay.getReplayIndex());
-				if (replay == null) {
+				// 1曲モードのリプレイ読み込み
+				replay = main.getPlayDataAccessor().readReplayData(model, config.getLnmode(), autoplay.id);
+				if (replay != null) {
+					boolean isReplayPatternPlay = false;
+					if(main.getInputProcessor().getKeyState(1)) {
+						//保存された譜面オプション/Random Seedから譜面再現
+						Logger.getGlobal().info("リプレイ再現モード : 譜面");
+						playinfo.randomoption = replay.randomoption;
+						playinfo.randomoptionseed = replay.randomoptionseed;
+						playinfo.randomoption2 = replay.randomoption2;
+						playinfo.randomoption2seed = replay.randomoption2seed;
+						playinfo.doubleoption = replay.doubleoption;
+						playinfo.rand = replay.rand;
+						isReplayPatternPlay = true;
+					} else if(main.getInputProcessor().getKeyState(2)) {
+						//保存された譜面オプションログから譜面オプション再現
+						Logger.getGlobal().info("リプレイ再現モード : オプション");
+						playinfo.randomoption = replay.randomoption;
+						playinfo.randomoption2 = replay.randomoption2;
+						playinfo.doubleoption = replay.doubleoption;
+						isReplayPatternPlay = true;
+					}
+					if(main.getInputProcessor().getKeyState(4)) {
+						//保存されたHSオプションログからHSオプション再現
+						Logger.getGlobal().info("リプレイ再現モード : ハイスピード");
+						HSReplay = replay;
+						isReplayPatternPlay = true;
+					}
+					if(isReplayPatternPlay) {
+						replay = null;
+						autoplay = BMSPlayerMode.PLAY;
+						resource.setPlayMode(autoplay);
+					}
+				} else {
 					Logger.getGlobal().info("リプレイデータを読み込めなかったため、通常プレイモードに移行");
-					autoplay = PlayMode.PLAY;
+					autoplay = BMSPlayerMode.PLAY;
 					resource.setPlayMode(autoplay);
 				}
 			}
 		}
 
-		boolean isReplayPatternPlay = false;
-		ReplayData HSReplay = null;
 		boolean score = true;
-
-		if(replay != null && main.getInputProcessor().getKeystate()[1]) {
-			//保存された譜面変更ログから譜面再現
-			Logger.getGlobal().info("リプレイ再現モード : 譜面 (アシストモード)");
-			resource.setReplayData(replay);
-			isReplayPatternPlay = true;
-			assist = 1;
-			score = false;
-		} else if(replay != null && main.getInputProcessor().getKeystate()[2]) {
-			//保存された譜面オプションログから譜面オプション再現
-			Logger.getGlobal().info("リプレイ再現モード : オプション");
-			config.setRandom(replay.randomoption);
-			config.setRandom2(replay.randomoption2);
-			config.setDoubleoption(replay.doubleoption);
-			isReplayPatternPlay = true;
-		}
-		if(replay != null && main.getInputProcessor().getKeystate()[4]) {
-			//保存されたHSオプションログからHSオプション再現
-			Logger.getGlobal().info("リプレイ再現モード : ハイスピード");
-			HSReplay = replay;
-			isReplayPatternPlay = true;
-		}
-		if(isReplayPatternPlay) {
-			replay = null;
-			autoplay = PlayMode.PLAY;
-			resource.setPlayMode(autoplay);
-		}
 
 		// RANDOM構文処理
 		if (model.getRandom() != null && model.getRandom().length > 0) {
-			if (autoplay.isReplayMode()) {
-				model = resource.loadBMSModel(replay.rand);
-				// 暫定処置
-				BMSModelUtils.setStartNoteTime(model, 1000);
-				BMSPlayerRule.validate(model);
-			} else if (resource.getReplayData().pattern != null) {
-				model = resource.loadBMSModel(resource.getReplayData().rand);
+			if (autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
+				playinfo.rand = replay.rand;
+			} else if (resource.getReplayData().randomoptionseed != -1) {
+				// この処理はMusicResult、QuickRetry時にのみ通る
+				playinfo.rand = resource.getReplayData().rand;
+			}
+
+			if(playinfo.rand != null && playinfo.rand.length > 0) {
+				model = resource.loadBMSModel(playinfo.rand);
 				// 暫定処置
 				BMSModelUtils.setStartNoteTime(model, 1000);
 				BMSPlayerRule.validate(model);
 			}
-			Logger.getGlobal().info("譜面分岐 : " + Arrays.toString(model.getRandom()));
+			playinfo.rand = model.getRandom();
+			Logger.getGlobal().info("譜面分岐 : " + Arrays.toString(playinfo.rand));
 		}
 		// 通常プレイの場合は最後のノーツ、オートプレイの場合はBG/BGAを含めた最後のノーツ
-		playtime = (autoplay.isAutoPlayMode() ? model.getLastTime() : model.getLastNoteTime()) + TIME_MARGIN;
+		playtime = (autoplay.mode == BMSPlayerMode.Mode.AUTOPLAY ? model.getLastTime() : model.getLastNoteTime()) + TIME_MARGIN;
 
-		if (autoplay == PlayMode.PLAY || autoplay.isAutoPlayMode()) {
+		if (autoplay.mode == BMSPlayerMode.Mode.PLAY || autoplay.mode == BMSPlayerMode.Mode.AUTOPLAY) {
 			if (config.isBpmguide() && (model.getMinBPM() < model.getMaxBPM())) {
 				// BPM変化がなければBPMガイドなし
 				assist = Math.max(assist, 1);
 				score = false;
 			}
-			
-			if (config.getJudgewindowrate() > 100) {
+
+			if (config.isCustomJudge() &&
+					(config.getKeyJudgeWindowRatePerfectGreat() > 100 || config.getKeyJudgeWindowRateGreat() > 100 || config.getKeyJudgeWindowRateGood() > 100
+					|| config.getScratchJudgeWindowRatePerfectGreat() > 100 || config.getScratchJudgeWindowRateGreat() > 100 || config.getScratchJudgeWindowRateGood() > 100)) {
 				assist = Math.max(assist, 2);
 				score = false;
 			}
@@ -179,10 +218,10 @@ public class BMSPlayer extends MainState {
 			Array<PatternModifier> mods = new Array<PatternModifier>();
 
 			if(config.getScrollMode() > 0) {
-				mods.add(new ScrollSpeedModifier(config.getScrollMode() - 1));
+				mods.add(new ScrollSpeedModifier(config.getScrollMode() - 1, config.getScrollSection(), config.getScrollRate()));
 			}
 			if(config.getLongnoteMode() > 0) {
-				mods.add(new LongNoteModifier(config.getLongnoteMode() - 1));
+				mods.add(new LongNoteModifier(config.getLongnoteMode() - 1, config.getLongnoteRate()));
 			}
 			if(config.getMineMode() > 0) {
 				mods.add(new MineNoteModifier(config.getMineMode() - 1));
@@ -190,107 +229,121 @@ public class BMSPlayer extends MainState {
 			if(config.getExtranoteDepth() > 0) {
 				mods.add(new ExtraNoteModifier(config.getExtranoteType(), config.getExtranoteDepth(), config.isExtranoteScratch()));
 			}
-			
+
 			for(PatternModifier mod : mods) {
 				mod.modify(model);
 				if(mod.getAssistLevel() != PatternModifier.AssistLevel.NONE) {
 					assist = Math.max(assist, mod.getAssistLevel() == PatternModifier.AssistLevel.ASSIST ? 2 : 1);
 					score = false;
-				}				
+				}
 			}
 
-			if (config.getDoubleoption() >= 2 && (model.getMode() == Mode.BEAT_5K || model.getMode() == Mode.BEAT_7K || model.getMode() == Mode.KEYBOARD_24K)) {
-				// SPでなければBATTLEは未適用
-				switch (model.getMode()) {
-				case BEAT_5K:
-					model.setMode(Mode.BEAT_10K);
-					break;
-				case BEAT_7K:
-					model.setMode(Mode.BEAT_14K);
-					break;
-				case KEYBOARD_24K:
-					model.setMode(Mode.KEYBOARD_24K_DOUBLE);
-					break;
+			if (playinfo.doubleoption >= 2) {
+				if(model.getMode() == Mode.BEAT_5K || model.getMode() == Mode.BEAT_7K || model.getMode() == Mode.KEYBOARD_24K) {
+					switch (model.getMode()) {
+						case BEAT_5K -> model.setMode(Mode.BEAT_10K);
+						case BEAT_7K -> model.setMode(Mode.BEAT_14K);
+						case KEYBOARD_24K -> model.setMode(Mode.KEYBOARD_24K_DOUBLE);
+					}
+					LaneShuffleModifier mod = new PlayerBattleModifier();
+					mod.modify(model);
+					if(playinfo.doubleoption == 3) {
+						PatternModifier as = new AutoplayModifier(model.getMode().scratchKey);
+						as.modify(model);
+					}
+					assist = Math.max(assist, 1);
+					score = false;
+					Logger.getGlobal().info("譜面オプション : BATTLE (L-ASSIST)");
+				} else {
+					// SPでなければBATTLEは未適用
+					playinfo.doubleoption = 0;
 				}
-				LaneShuffleModifier mod = new LaneShuffleModifier(LaneShuffleModifier.BATTLE);
-				mod.setModifyTarget(PatternModifier.SIDE_1P);
-				mod.modify(model);
-				if(config.getDoubleoption() == 3) {
-					PatternModifier as = new AutoplayModifier(model.getMode().scratchKey);
-					as.modify(model);
-				}
-				assist = Math.max(assist, 1);
-				score = false;
-				Logger.getGlobal().info("譜面オプション : BATTLE (L-ASSIST)");
 			}
 		}
 
 		Logger.getGlobal().info("譜面オプション設定");
-		if (replay != null) {
+		if (replay != null && replay.pattern != null) {
+			// リプレイ譜面再現(PatternModifyLog使用。旧verとの互換性維持用)
 			if(replay.sevenToNinePattern > 0 && model.getMode() == Mode.BEAT_7K) {
 				model.setMode(Mode.POPN_9K);
 			}
 			PatternModifier.modify(model, Arrays.asList(replay.pattern));
-			Logger.getGlobal().info("リプレイデータから譜面再現");
-		} else if (resource.getReplayData().pattern != null) {
-			if(resource.getReplayData().sevenToNinePattern > 0 && model.getMode() == Mode.BEAT_7K) {
-				model.setMode(Mode.POPN_9K);
+			Logger.getGlobal().info("リプレイデータから譜面再現 : PatternModifyLog");
+		} else if (autoplay.mode != BMSPlayerMode.Mode.PRACTICE) {
+
+			// リプレイデータからのoption/seed再現
+			ReplayData rd = null;
+			if(replay != null) {
+				rd = replay;
+				Logger.getGlobal().info("リプレイデータから譜面再現 : option/seed");
+			} else if(resource.getReplayData().randomoptionseed != -1) {
+				rd = resource.getReplayData();
+				Logger.getGlobal().info("前回プレイ時の譜面再現");
 			}
-			pattern = Arrays.asList(resource.getReplayData().pattern);
-			PatternModifier.modify(model, pattern);
-			Logger.getGlobal().info("譜面オプション : 保存された譜面変更ログから譜面再現");
-		} else if (autoplay != PlayMode.PRACTICE) {
-			Randomizer.setPlayerConfig(config);
-			PatternModifier.setPlayerConfig(config);
+			if (rd != null) {
+				if(rd.sevenToNinePattern > 0 && model.getMode() == Mode.BEAT_7K) {
+					model.setMode(Mode.POPN_9K);
+				}
+				playinfo.randomoption = rd.randomoption;
+				playinfo.randomoptionseed = rd.randomoptionseed;
+				playinfo.randomoption2 = rd.randomoption2;
+				playinfo.randomoption2seed = rd.randomoption2seed;
+				playinfo.doubleoption = rd.doubleoption;
+			}
+
+			Array<PatternModifier> mods = new Array<PatternModifier>();
+			// DP譜面オプション
 			if(model.getMode().player == 2) {
-				if (config.getDoubleoption() == 1) {
-					LaneShuffleModifier mod = new LaneShuffleModifier(LaneShuffleModifier.FLIP);
-					pattern = PatternModifier.merge(pattern,mod.modify(model));
+				if (playinfo.doubleoption == 1) {
+					mods.add(new PlayerFlipModifier());
 				}
-				pattern = PatternModifier.merge(pattern,
-								PatternModifier.create(config.getRandom2(), PatternModifier.SIDE_2P, model.getMode())
-										.modify(model));
-				if (config.getRandom2() >= 6) {
-					assist = Math.max(assist, 1);
-					score = false;
+				Logger.getGlobal().info("譜面オプション(DP) :  " + playinfo.doubleoption);
+
+				PatternModifier pm = PatternModifier.create(playinfo.randomoption2, 1, model.getMode(), config);
+				if(playinfo.randomoption2seed != -1) {
+					pm.setSeed(playinfo.randomoption2seed);
+				} else {
+					playinfo.randomoption2seed = pm.getSeed();
 				}
-				Logger.getGlobal().info("譜面オプション(2P) :  " + config.getRandom2());
+				mods.add(pm);
+				Logger.getGlobal().info("譜面オプション(2P) :  " + playinfo.randomoption2 + ", Seed : " + playinfo.randomoption2seed);
 			}
 
-			// POPN_9KのSCR系RANDOMにPOPN_5Kは対応していないため、非SCR系RANDOMに変更
-			if(model.getMode() == Mode.POPN_5K) {
-				switch(Random.getRandom(config.getRandom())) {
-				case ALL_SCR: config.setRandom(Random.IDENTITY.id);
-					break;
-				case RANDOM_EX: config.setRandom(Random.RANDOM.id);
-					break;
-				case S_RANDOM_EX: config.setRandom(Random.S_RANDOM.id);
-					break;
-				default:
-					break;
-				}
+			// SP譜面オプション
+			PatternModifier pm = PatternModifier.create(playinfo.randomoption, 0, model.getMode(), config);
+			if(playinfo.randomoptionseed != -1) {
+				pm.setSeed(playinfo.randomoptionseed);
+			} else {
+				playinfo.randomoptionseed = pm.getSeed();
 			}
+			mods.add(pm);
+			Logger.getGlobal().info("譜面オプション(1P) :  " + playinfo.randomoption + ", Seed : " + playinfo.randomoptionseed);
 
-			pattern = PatternModifier.merge(pattern,
-					PatternModifier
-							.create(config.getRandom(), PatternModifier.SIDE_1P, model.getMode())
-							.modify(model));
-			if (config.getRandom() >= 6 && !(config.getRandom() == 8 && model.getMode() == Mode.POPN_9K)) {
-				assist = Math.max(assist, 1);
-				score = false;
-			}
-			Logger.getGlobal().info("譜面オプション(1P) :  " + config.getRandom());
 			if (config.getSevenToNinePattern() >= 1 && model.getMode() == Mode.BEAT_7K) {
 				//7to9
-				model.setMode(Mode.POPN_9K);
-				NoteShuffleModifier mod = new NoteShuffleModifier(NoteShuffleModifier.SEVEN_TO_NINE);
-				mod.setModifyTarget(PatternModifier.SIDE_1P);
-				pattern = mod.modify(model);
-				if(config.getSevenToNineType() != 0) {
-					assist = Math.max(assist, 1);
+				ModeModifier mod = new ModeModifier(Mode.BEAT_7K, Mode.POPN_9K, config);
+				mods.add(mod);
+			}
+
+			int[][] patternArray = new int[model.getMode().player][];
+
+			for(PatternModifier mod : mods) {
+				mod.modify(model);
+				if(mod.getAssistLevel() != PatternModifier.AssistLevel.NONE) {
+					Logger.getGlobal().info("アシスト譜面オプションが選択されました");
+					assist = Math.max(assist, mod.getAssistLevel() == PatternModifier.AssistLevel.ASSIST ? 2 : 1);
 					score = false;
 				}
+
+				if (mod instanceof LaneShuffleModifier lmod){
+					if(lmod.isToDisplay()){
+						patternArray[lmod.player] = lmod.getRandomPattern(model.getMode());
+					}
+				}
 			}
+//			playinfo.pattern = pattern.toArray(new PatternModifyLog[pattern.size()]);
+			playinfo.laneShufflePattern = patternArray;
+
 		}
 
 		if(HSReplay != null && HSReplay.config != null) {
@@ -300,14 +353,13 @@ public class BMSPlayer extends MainState {
 
 		Logger.getGlobal().info("ゲージ設定");
 		if(replay != null) {
-			boolean[] keystate = main.getInputProcessor().getKeystate();
-			for(int count = (keystate[5] ? 1 : 0) + (keystate[3] ? 2 : 0);count > 0; count--) {
+			for(int count = (main.getInputProcessor().getKeyState(5) ? 1 : 0) + (main.getInputProcessor().getKeyState(3) ? 2 : 0);count > 0; count--) {
 				if (replay.gauge != GrooveGauge.HAZARD || replay.gauge != GrooveGauge.EXHARDCLASS) {
 					replay.gauge++;
 				}
 			}
 		}
-		if(replay != null && main.getInputProcessor().getKeystate()[5]) {
+		if(replay != null && main.getInputProcessor().getKeyState(5)) {
 		}
 		// プレイゲージ、初期値設定
 		gauge = GrooveGauge.create(model, replay != null ? replay.gauge : config.getGauge(), resource);
@@ -336,39 +388,34 @@ public class BMSPlayer extends MainState {
 	}
 
 	public void create() {
-		final PlayerResource resource = main.getPlayerResource();
-		final PlayMode autoplay = resource.getPlayMode();
+		final BMSPlayerMode autoplay = resource.getPlayMode();
 		laneProperty = new LaneProperty(model.getMode());
 		keysound = new KeySoundProcessor(this);
 		judge = new JudgeManager(this);
 		control = new ControlInputProcessor(this, autoplay);
 		keyinput = new KeyInputProccessor(this, laneProperty);
-		Config conf = resource.getConfig();
 		PlayerConfig config = resource.getPlayerConfig();
 
 		loadSkin(getSkinType());
 
-		setSound(SOUND_READY, "playready.wav", SoundType.SOUND, false);
-		setSound(SOUND_PLAYSTOP, "playstop.wav", SoundType.SOUND, false);
-
-		final String[] guideses = {"guide-pg.wav","guide-gr.wav","guide-gd.wav","guide-bd.wav","guide-pr.wav","guide-ms.wav"};
+		final SystemSoundManager.SoundType[] guideses = {GUIDESE_PG,GUIDESE_GR,GUIDESE_GD,GUIDESE_BD,GUIDESE_PR,GUIDESE_MS};
 		for(int i = 0;i < 6;i++) {
 			if(config.isGuideSE()) {
-				Path[] paths = getSoundPaths(guideses[i], SoundType.SOUND);
+				Path[] paths = main.getSoundManager().getSoundPaths(guideses[i]);
 				if(paths.length > 0) {
 					main.getAudioProcessor().setAdditionalKeySound(i, true, paths[0].toString());
 					main.getAudioProcessor().setAdditionalKeySound(i, false, paths[0].toString());
-				}				
+				}
 			} else {
 				main.getAudioProcessor().setAdditionalKeySound(i, true, null);
-				main.getAudioProcessor().setAdditionalKeySound(i, false, null);								
+				main.getAudioProcessor().setAdditionalKeySound(i, false, null);
 			}
 		}
 
 		final BMSPlayerInputProcessor input = main.getInputProcessor();
-		if(autoplay == PlayMode.PLAY || autoplay == PlayMode.PRACTICE) {
+		if(autoplay.mode == BMSPlayerMode.Mode.PLAY || autoplay.mode == BMSPlayerMode.Mode.PRACTICE) {
 			input.setPlayConfig(config.getPlayConfig(model.getMode()));
-		} else if (autoplay.isAutoPlayMode() || autoplay.isReplayMode()) {
+		} else if (autoplay.mode == BMSPlayerMode.Mode.AUTOPLAY || autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
 			input.setEnable(false);
 		}
 		lanerender = new LaneRenderer(this, model);
@@ -381,47 +428,32 @@ public class BMSPlayer extends MainState {
 
 		judge.init(model, resource);
 
-		rhythm = new RhythmTimerProcessor(model, 
+		rhythm = new RhythmTimerProcessor(model,
 				(getSkin() instanceof PlaySkin) ? ((PlaySkin) getSkin()).getNoteExpansionRate()[0] != 100 || ((PlaySkin) getSkin()).getNoteExpansionRate()[1] != 100 : false);
 
 		bga = resource.getBGAManager();
 
-		IRScoreData score = main.getPlayDataAccessor().readScoreData(model, config.getLnmode());
+		ScoreData score = main.getPlayDataAccessor().readScoreData(model, config.getLnmode());
 		Logger.getGlobal().info("スコアデータベースからスコア取得");
 		if (score == null) {
-			score = new IRScoreData();
+			score = new ScoreData();
 		}
 
-		int rivalscore = TargetProperty.getAllTargetProperties()[config.getTarget()]
-				.getTarget(main);
-		resource.setRivalScoreData(rivalscore);
-
-		if (autoplay == PlayMode.PRACTICE) {
+		if (autoplay.mode == BMSPlayerMode.Mode.PRACTICE) {
 			getScoreDataProperty().setTargetScore(0, null, 0, null, model.getTotalNotes());
-			practice.create(model);
+			practice.create(model, main.getConfig());
 			state = STATE_PRACTICE;
 		} else {
-			getScoreDataProperty().setTargetScore(score.getExscore(), score.decodeGhost(), rivalscore, null, model.getTotalNotes());
+			
+			if(resource.getRivalScoreData() == null || resource.getCourseBMSModels() != null) {
+				ScoreData targetScore = TargetProperty.getTargetProperty(config.getTargetid()).getTarget(main);
+				resource.setTargetScoreData(targetScore);
+			} else {
+				resource.setTargetScoreData(resource.getRivalScoreData());
+			}
+			getScoreDataProperty().setTargetScore(score.getExscore(), score.decodeGhost(), resource.getTargetScoreData() != null ? resource.getTargetScoreData().getExscore() : 0 , null, model.getTotalNotes());
 		}
 	}
-
-	public static final int STATE_PRELOAD = 0;
-	public static final int STATE_PRACTICE = 1;
-	public static final int STATE_PRACTICE_FINISHED = 2;
-	public static final int STATE_READY = 3;
-	public static final int STATE_PLAY = 4;
-	public static final int STATE_FAILED = 5;
-	public static final int STATE_FINISHED = 6;
-
-	private int state = STATE_PRELOAD;
-
-	private long prevtime;
-
-	private PracticeConfiguration practice = new PracticeConfiguration();
-	private long starttimeoffset;
-
-	private RhythmTimerProcessor rhythm;
-	private long startpressedtime;
 
 	@Override
 	public void render() {
@@ -430,307 +462,314 @@ public class BMSPlayer extends MainState {
 			main.changeState(MainStateType.MUSICSELECT);
 			return;
 		}
-		final PlayerResource resource = main.getPlayerResource();
-		final PlayMode autoplay = resource.getPlayMode();
+		final BMSPlayerMode autoplay = resource.getPlayMode();
 		final BMSPlayerInputProcessor input = main.getInputProcessor();
 		final PlayerConfig config = resource.getPlayerConfig();
 
-		final long now = main.getNowTime();
-		final long micronow = main.getNowMicroTime();
+		final long micronow = timer.getNowMicroTime();
 
-		if(now > skin.getInput()){
-			main.switchTimer(TIMER_STARTINPUT, true);
+		if(micronow > skin.getInput() * 1000){
+			timer.switchTimer(TIMER_STARTINPUT, true);
 		}
 		if(input.startPressed() || input.isSelectPressed()){
-			startpressedtime = now;
+			startpressedtime = micronow;
 		}
+		
+
 		switch (state) {
 		// 楽曲ロード
-		case STATE_PRELOAD:
-			if (resource.mediaLoadFinished() && now > skin.getLoadstart() + skin.getLoadend()
-					&& now - startpressedtime > 1000) {
-				bga.prepare(this);
-				final long mem = Runtime.getRuntime().freeMemory();
-				System.gc();
-				final long cmem = Runtime.getRuntime().freeMemory();
-				Logger.getGlobal().info("current free memory : " + (cmem / (1024 * 1024)) + "MB , disposed : "
-						+ ((cmem - mem) / (1024 * 1024)) + "MB");
-				state = STATE_READY;
-				main.setTimerOn(TIMER_READY);
-				play(SOUND_READY);
-				Logger.getGlobal().info("STATE_READYに移行");
-			}
-			if(!main.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) || !main.isTimerOn(TIMER_PM_CHARA_2P_NEUTRAL)){
-				main.setTimerOn(TIMER_PM_CHARA_1P_NEUTRAL);
-				main.setTimerOn(TIMER_PM_CHARA_2P_NEUTRAL);
-			}
-			break;
-		// practice mode
-		case STATE_PRACTICE:
-			if (main.isTimerOn(TIMER_PLAY)) {
-				resource.reloadBMSFile();
-				model = resource.getBMSModel();
-				main.getPlayerResource().getSongdata().setBMSModel(model);
-				lanerender.init(model);
-				keyinput.setKeyBeamStop(false);
-				main.setTimerOff(TIMER_PLAY);
-				main.setTimerOff(TIMER_RHYTHM);
-				main.setTimerOff(TIMER_FAILED);
-				main.setTimerOff(TIMER_FADEOUT);
-				main.setTimerOff(TIMER_ENDOFNOTE_1P);
-
-				for(int i = TIMER_PM_CHARA_1P_NEUTRAL; i <= TIMER_PM_CHARA_DANCE; i++) main.setTimerOff(i);
-			}
-			if(!main.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) || !main.isTimerOn(TIMER_PM_CHARA_2P_NEUTRAL)){
-				main.setTimerOn(TIMER_PM_CHARA_1P_NEUTRAL);
-				main.setTimerOn(TIMER_PM_CHARA_2P_NEUTRAL);
-			}
-			control.setEnableControl(false);
-			control.setEnableCursor(false);
-			practice.processInput(input);
-
-			if (input.getKeystate()[0] && resource.mediaLoadFinished() && now > skin.getLoadstart() + skin.getLoadend()
-					&& now - startpressedtime > 1000) {
-				PracticeProperty property = practice.getPracticeProperty();
-				Randomizer.setPlayerConfig(config);
-				control.setEnableControl(true);
-				control.setEnableCursor(true);
-				if (property.freq != 100) {
-					BMSModelUtils.changeFrequency(model, property.freq / 100f);
-					if (main.getConfig().getAudioFreqOption() == Config.AUDIO_PLAY_FREQ) {
-						main.getAudioProcessor().setGlobalPitch(property.freq / 100f);
-					}
-				}
-				model.setTotal(property.total);
-				PracticeModifier pm = new PracticeModifier(property.starttime * 100 / property.freq,
-						property.endtime * 100 / property.freq);
-				pm.modify(model);
-				if (model.getMode().player == 2) {
-					if (property.doubleop == 1) {
-						new LaneShuffleModifier(LaneShuffleModifier.FLIP).modify(model);
-					}
-					PatternModifier.create(property.random2, PatternModifier.SIDE_2P, model.getMode()).modify(model);
-				}
-				PatternModifier.create(property.random, PatternModifier.SIDE_1P, model.getMode()).modify(model);
-
-				gauge = practice.getGauge(model);
-				model.setJudgerank(property.judgerank);
-				lanerender.init(model);
-				judge.init(model, resource);
-				notes = 0;
-				PMcharaLastnotes[0] = 0;
-				PMcharaLastnotes[1] = 0;
-				starttimeoffset = (property.starttime > 1000 ? property.starttime - 1000 : 0) * 100 / property.freq;
-				playtime = (property.endtime + 1000) * 100 / property.freq + TIME_MARGIN;
-				bga.prepare(this);
-				state = STATE_READY;
-				main.setTimerOn(TIMER_READY);
-				play(SOUND_READY);
-				Logger.getGlobal().info("STATE_READYに移行");
-			}
-			break;
-		// practice終了
-		case STATE_PRACTICE_FINISHED:
-			if (main.getNowTime(TIMER_FADEOUT) > skin.getFadeout()) {
-				input.setEnable(true);
-				input.setStartTime(0);
-				main.changeState(MainStateType.MUSICSELECT);
-			}
-			break;
-			// GET READY
-		case STATE_READY:
-			if (main.getNowTime(TIMER_READY) > skin.getPlaystart()) {
-				replayConfig = lanerender.getPlayConfig().clone();
-				state = STATE_PLAY;
-				main.setMicroTimer(TIMER_PLAY, micronow - starttimeoffset * 1000);
-				main.setMicroTimer(TIMER_RHYTHM, micronow - starttimeoffset * 1000);
-
-				input.setStartTime(now + main.getStartTime() - starttimeoffset);
-				if (autoplay.isReplayMode()) {
-					for(KeyInputLog keyinput : replay.keylog) {
-						keyinput.time += resource.getMarginTime();
-					}
-				}
-				keyinput.startJudge(model, replay != null ? replay.keylog : null);
-				keysound.startBGPlay(model, starttimeoffset * 1000);
-				Logger.getGlobal().info("STATE_PLAYに移行");
-			}
-			break;
-		// プレイ
-		case STATE_PLAY:
-			final long deltatime = micronow - prevtime;
-			final long deltaplay = deltatime * (100 - playspeed) / 100;
-			PracticeProperty property = practice.getPracticeProperty();
-			main.setMicroTimer(TIMER_PLAY, main.getMicroTimer(TIMER_PLAY) + deltaplay);
-
-			rhythm.update(this, deltatime, lanerender.getNowBPM(), property.freq);
-
-			final long ptime = main.getNowTime(TIMER_PLAY);
-			float g = gauge.getValue();
-			for(int i = 0; i < gaugelog.length; i++) {
-				if (gaugelog[i].size <= ptime / 500) {
-					gaugelog[i].add(gauge.getValue(i));
-				}
-			}
-			main.switchTimer(TIMER_GAUGE_MAX_1P, gauge.getGauge().isMax());
-
-			if(main.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_1P_NEUTRAL) >= skin.getPMcharaTime(TIMER_PM_CHARA_1P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_1P_NEUTRAL) % skin.getPMcharaTime(TIMER_PM_CHARA_1P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) < 17) {
-				if(PMcharaLastnotes[0] != notes && judge.getPMcharaJudge() > 0) {
-					if(judge.getPMcharaJudge() == 1 || judge.getPMcharaJudge() == 2) {
-						if(gauge.getGauge().isMax()) main.setTimerOn(TIMER_PM_CHARA_1P_FEVER);
-						else main.setTimerOn(TIMER_PM_CHARA_1P_GREAT);
-					} else if(judge.getPMcharaJudge() == 3) main.setTimerOn(TIMER_PM_CHARA_1P_GOOD);
-					else main.setTimerOn(TIMER_PM_CHARA_1P_BAD);
-					main.setTimerOff(TIMER_PM_CHARA_1P_NEUTRAL);
-				}
-			}
-			if(main.isTimerOn(TIMER_PM_CHARA_2P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_2P_NEUTRAL) >= skin.getPMcharaTime(TIMER_PM_CHARA_2P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) && main.getNowTime(TIMER_PM_CHARA_2P_NEUTRAL) % skin.getPMcharaTime(TIMER_PM_CHARA_2P_NEUTRAL - TIMER_PM_CHARA_1P_NEUTRAL) < 17) {
-				if(PMcharaLastnotes[1] != notes && judge.getPMcharaJudge() > 0) {
-					if(judge.getPMcharaJudge() >= 1 && judge.getPMcharaJudge() <= 3) main.setTimerOn(TIMER_PM_CHARA_2P_BAD);
-					else main.setTimerOn(TIMER_PM_CHARA_2P_GREAT);
-					main.setTimerOff(TIMER_PM_CHARA_2P_NEUTRAL);
-				}
-			}
-			for(int i = TIMER_PM_CHARA_1P_FEVER; i <= TIMER_PM_CHARA_2P_BAD; i++) {
-				if(i != TIMER_PM_CHARA_2P_NEUTRAL && main.isTimerOn(i) && main.getNowTime(i) >= skin.getPMcharaTime(i - TIMER_PM_CHARA_1P_NEUTRAL)) {
-					if(i <= TIMER_PM_CHARA_1P_BAD) {
-						main.setTimerOn(TIMER_PM_CHARA_1P_NEUTRAL);
-						PMcharaLastnotes[0] = notes;
-					} else {
-						main.setTimerOn(TIMER_PM_CHARA_2P_NEUTRAL);
-						PMcharaLastnotes[1] = notes;
-					}
-					main.setTimerOff(i);
-				}
-			}
-			main.switchTimer(TIMER_PM_CHARA_DANCE, true);
-
-			// System.out.println("playing time : " + time);
-			if (playtime < ptime) {
-				state = STATE_FINISHED;
-				main.setTimerOn(TIMER_MUSIC_END);
-				for(int i = TIMER_PM_CHARA_1P_NEUTRAL; i <= TIMER_PM_CHARA_2P_BAD; i++) {
-					main.setTimerOff(i);
-				}
-				main.setTimerOff(TIMER_PM_CHARA_DANCE);
-
-				Logger.getGlobal().info("STATE_FINISHEDに移行");
-			} else if(playtime - TIME_MARGIN < ptime) {
-				main.switchTimer(TIMER_ENDOFNOTE_1P, true);
-			}
-			// stage failed判定
-			if (config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_BESTCLEAR || config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_SELECT_TO_UNDER) {
-				final int len = config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_BESTCLEAR
-						? (gauge.getType() >= GrooveGauge.CLASS ? GrooveGauge.EXHARDCLASS + 1 : GrooveGauge.HAZARD + 1)
-						: (gauge.isCourseGauge() ? Math.min(Math.max(config.getGauge(), GrooveGauge.NORMAL) + GrooveGauge.CLASS - GrooveGauge.NORMAL, GrooveGauge.EXHARDCLASS) + 1 : config.getGauge() + 1);
-				int type = gauge.isCourseGauge() ? GrooveGauge.CLASS
-						: gauge.getType() < config.getBottomShiftableGauge() ? gauge.getType() : config.getBottomShiftableGauge();
-				for (int i = type; i < len; i++) {
-					if (gauge.getGauge(i).getValue() > 0f && gauge.getGauge(i).isQualified()) {
-						type = i;
-					}
-				}
-				gauge.setType(type);
-			} else if (g == 0) {
-				switch(config.getGaugeAutoShift()) {
-				case PlayerConfig.GAUGEAUTOSHIFT_NONE:
-					// FAILED移行
-					state = STATE_FAILED;
-					main.setTimerOn(TIMER_FAILED);
-					if (resource.mediaLoadFinished()) {
-						main.getAudioProcessor().stop((Note) null);
-					}
-					play(SOUND_PLAYSTOP);
-					Logger.getGlobal().info("STATE_FAILEDに移行");
-					break;
-				case PlayerConfig.GAUGEAUTOSHIFT_CONTINUE:
-					break;
-				case PlayerConfig.GAUGEAUTOSHIFT_SURVIVAL_TO_GROOVE:
-					if(!gauge.isCourseGauge()) {
-						// GAS処理
-						gauge.setType(GrooveGauge.NORMAL);
-					}
-					break;
-				}
-			}
-			break;
-		// 閉店処理
-		case STATE_FAILED:
-			keyinput.stopJudge();
-			keysound.stopBGPlay();
-
-			if (main.getNowTime(TIMER_FAILED) > skin.getClose()) {
-				main.getAudioProcessor().setGlobalPitch(1f);
-				if (resource.mediaLoadFinished()) {
-					resource.getBGAManager().stop();
-				}
-				if (!autoplay.isAutoPlayMode() && autoplay != PlayMode.PRACTICE) {
-					resource.setScoreData(createScoreData());
-				}
-				resource.setCombo(judge.getCourseCombo());
-				resource.setMaxcombo(judge.getCourseMaxcombo());
-				saveConfig();
-				if (main.isTimerOn(TIMER_PLAY)) {
-					for (long l = main.getTimer(TIMER_FAILED) - main.getTimer(TIMER_PLAY); l < playtime + 500; l += 500) {
-						for(int i = 0; i < gaugelog.length; i++) {
-							gaugelog[i].add(0f);
+			case STATE_PRELOAD -> {
+				if(config.isChartPreview()) {
+					if(timer.isTimerOn(141) && micronow > startpressedtime) {
+						timer.setTimerOff(141);
+						lanerender.init(model);					
+					} else if(!timer.isTimerOn(141) && micronow == startpressedtime){
+						long  starttime = 0;
+						for(TimeLine tl : model.getAllTimeLines()) {
+							if(tl.existNote()) {
+								starttime = tl.getMicroTime();
+								break;
+							}
 						}
-					}
+						timer.setMicroTimer(141, micronow - starttime + 1000000);				
+					}				
 				}
-				resource.setGauge(gaugelog);
-				resource.setGrooveGauge(gauge);
-				resource.setAssist(assist);
-				input.setEnable(true);
-				input.setStartTime(0);
-				if (autoplay == PlayMode.PRACTICE) {
-					state = STATE_PRACTICE;
-				} else if (resource.getScoreData() != null) {
-					main.changeState(MainStateType.RESULT);
-				} else {
+				
+				if (resource.mediaLoadFinished() && micronow > (skin.getLoadstart() + skin.getLoadend()) * 1000
+						&& micronow - startpressedtime > 1000000) {
+					if(config.isChartPreview()) {
+						timer.setTimerOff(141);
+						lanerender.init(model);					
+					}
+					bga.prepare(this);
+					final long mem = Runtime.getRuntime().freeMemory();
+					System.gc();
+					final long cmem = Runtime.getRuntime().freeMemory();
+					Logger.getGlobal().info("current free memory : " + (cmem / (1024 * 1024)) + "MB , disposed : "
+							+ ((cmem - mem) / (1024 * 1024)) + "MB");
+					state = STATE_READY;
+					timer.setTimerOn(TIMER_READY);
+					play(PLAY_READY);
+					Logger.getGlobal().info("STATE_READYに移行");
+				}
+				if(!timer.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) || !timer.isTimerOn(TIMER_PM_CHARA_2P_NEUTRAL)){
+					timer.setTimerOn(TIMER_PM_CHARA_1P_NEUTRAL);
+					timer.setTimerOn(TIMER_PM_CHARA_2P_NEUTRAL);
+				}
+			}
+			// practice mode
+			case STATE_PRACTICE -> {
+				if (timer.isTimerOn(TIMER_PLAY)) {
+					resource.reloadBMSFile();
+					model = resource.getBMSModel();
+					resource.getSongdata().setBMSModel(model);
+					lanerender.init(model);
+					keyinput.setKeyBeamStop(false);
+					timer.setTimerOff(TIMER_PLAY);
+					timer.setTimerOff(TIMER_RHYTHM);
+					timer.setTimerOff(TIMER_FAILED);
+					timer.setTimerOff(TIMER_FADEOUT);
+					timer.setTimerOff(TIMER_ENDOFNOTE_1P);
+
+					for(int i = TIMER_PM_CHARA_1P_NEUTRAL; i <= TIMER_PM_CHARA_DANCE; i++) timer.setTimerOff(i);
+				}
+				if(!timer.isTimerOn(TIMER_PM_CHARA_1P_NEUTRAL) || !timer.isTimerOn(TIMER_PM_CHARA_2P_NEUTRAL)){
+					timer.setTimerOn(TIMER_PM_CHARA_1P_NEUTRAL);
+					timer.setTimerOn(TIMER_PM_CHARA_2P_NEUTRAL);
+				}
+				control.setEnableControl(false);
+				control.setEnableCursor(false);
+				practice.processInput(input);
+
+				if (input.getKeyState(0) && resource.mediaLoadFinished() &&  micronow > (skin.getLoadstart() + skin.getLoadend()) * 1000
+						&& micronow - startpressedtime > 1000000) {
+					PracticeProperty property = practice.getPracticeProperty();
+					control.setEnableControl(true);
+					control.setEnableCursor(true);
+					final FrequencyType freqOption = main.getConfig().getAudioConfig().getFreqOption();
+					final AudioDriver audio = main.getAudioProcessor();
+					final float freqRate = property.freq / 100f;
+					if (property.freq != 100) {
+						BMSModelUtils.changeFrequency(model, freqRate);
+					}
+					if (freqOption == FrequencyType.SPEED) {
+						audio.setGlobalPitch(1f);
+						audio.setModel(model, freqRate);
+					} else if (freqOption == FrequencyType.FREQUENCY) {
+						audio.setGlobalPitch(freqRate);
+					}
+					model.setTotal(property.total);
+					PracticeModifier pm = new PracticeModifier(property.starttime * 100 / property.freq,
+							property.endtime * 100 / property.freq);
+					pm.modify(model);
+					if (model.getMode().player == 2) {
+						if (property.doubleop == 1) {
+							new PlayerFlipModifier().modify(model);
+						}
+						PatternModifier.create(property.random2, 1, model.getMode(), config).modify(model);
+					}
+					PatternModifier.create(property.random, 0, model.getMode(), config).modify(model);
+
+					gauge = practice.getGauge(model);
+					model.setJudgerank(property.judgerank);
+					lanerender.init(model);
+					judge.init(model, resource);
+					skin.pomyu.init();
+					starttimeoffset = (property.starttime > 1000 ? property.starttime - 1000 : 0) * 100 / property.freq;
+					playtime = (property.endtime + 1000) * 100 / property.freq + TIME_MARGIN;
+					bga.prepare(this);
+					state = STATE_READY;
+					// setModel等の同期処理で時間が経過しているため、タイマーを更新してからREADYタイマーを設定
+					timer.update();
+					timer.setTimerOn(TIMER_READY);
+					play(PLAY_READY);
+					Logger.getGlobal().info("STATE_READYに移行");
+				}
+			}
+			// practice終了
+			case STATE_PRACTICE_FINISHED -> {
+				if (timer.getNowTime(TIMER_FADEOUT) > skin.getFadeout()) {
+					input.setEnable(true);
+					input.setStartTime(0);
 					main.changeState(MainStateType.MUSICSELECT);
 				}
 			}
-			break;
-		// 完奏処理
-		case STATE_FINISHED:
-			keyinput.stopJudge();
-			keysound.stopBGPlay();
-			if (main.getNowTime(TIMER_MUSIC_END) > skin.getFinishMargin()) {
-				main.switchTimer(TIMER_FADEOUT, true);
-			}
-			if (main.getNowTime(TIMER_FADEOUT) > skin.getFadeout()) {
-				main.getAudioProcessor().setGlobalPitch(1f);
-				resource.getBGAManager().stop();
-				if (!autoplay.isAutoPlayMode() && autoplay != PlayMode.PRACTICE) {
-					resource.setScoreData(createScoreData());
+			// GET READY
+			case STATE_READY -> {
+				if (timer.getNowTime(TIMER_READY) > skin.getPlaystart()) {
+					replayConfig = lanerender.getPlayConfig().clone();
+					state = STATE_PLAY;
+					timer.setMicroTimer(TIMER_PLAY, micronow - starttimeoffset * 1000);
+					timer.setMicroTimer(TIMER_RHYTHM, micronow - starttimeoffset * 1000);
+
+					input.setStartTime(micronow + timer.getStartMicroTime() - starttimeoffset * 1000);
+					input.setKeyLogMarginTime(resource.getMarginTime());
+					keyinput.startJudge(model, replay != null ? replay.keylog : null, resource.getMarginTime());
+					keysound.startBGPlay(model, starttimeoffset * 1000);
+					Logger.getGlobal().info("STATE_PLAYに移行");
 				}
-				resource.setCombo(judge.getCourseCombo());
-				resource.setMaxcombo(judge.getCourseMaxcombo());
-				saveConfig();
-				resource.setGauge(gaugelog);
-				resource.setGrooveGauge(gauge);
-				resource.setAssist(assist);
-				input.setEnable(true);
-				input.setStartTime(0);
-				if (autoplay == PlayMode.PRACTICE) {
-					state = STATE_PRACTICE;
-				} else if (resource.getScoreData() != null) {
-					Logger.getGlobal().info("\"score\": " + resource.getScoreData());
-					main.changeState(MainStateType.RESULT);
-				} else {
-					if (resource.mediaLoadFinished()) {
-						main.getAudioProcessor().stop((Note) null);
+			}
+			// プレイ
+			case STATE_PLAY -> {
+				final long deltatime = micronow - prevtime;
+				final long deltaplay = deltatime * (100 - playspeed) / 100;
+				PracticeProperty property = practice.getPracticeProperty();
+				timer.setMicroTimer(TIMER_PLAY, timer.getMicroTimer(TIMER_PLAY) + deltaplay);
+
+				rhythm.update(this, deltatime, lanerender.getNowBPM(), property.freq);
+
+				final long ptime = timer.getNowTime(TIMER_PLAY);
+				float g = gauge.getValue();
+				for(int i = 0; i < gaugelog.length; i++) {
+					if (gaugelog[i].size <= ptime / 500) {
+						gaugelog[i].add(gauge.getValue(i));
 					}
-					if (resource.getCourseBMSModels() != null && resource.nextCourse()) {
-						main.changeState(MainStateType.PLAY);
-					} else if(resource.nextSong()){
-						main.changeState(MainStateType.DECIDE);
+				}
+				timer.switchTimer(TIMER_GAUGE_MAX_1P, gauge.getGauge().isMax());
+
+				skin.pomyu.updateTimer(this);
+
+				// System.out.println("playing time : " + time);
+				if (playtime < ptime) {
+					state = STATE_FINISHED;
+					timer.setTimerOn(TIMER_MUSIC_END);
+					for(int i = TIMER_PM_CHARA_1P_NEUTRAL; i <= TIMER_PM_CHARA_2P_BAD; i++) {
+						timer.setTimerOff(i);
+					}
+					timer.setTimerOff(TIMER_PM_CHARA_DANCE);
+
+					Logger.getGlobal().info("STATE_FINISHEDに移行");
+				} else if(playtime - TIME_MARGIN < ptime) {
+					timer.switchTimer(TIMER_ENDOFNOTE_1P, true);
+				}
+				// stage failed判定
+				if (config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_BESTCLEAR || config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_SELECT_TO_UNDER) {
+					final int len = config.getGaugeAutoShift() == PlayerConfig.GAUGEAUTOSHIFT_BESTCLEAR
+							? (gauge.getType() >= GrooveGauge.CLASS ? GrooveGauge.EXHARDCLASS + 1 : GrooveGauge.HAZARD + 1)
+							: (gauge.isCourseGauge() ? Math.min(Math.max(config.getGauge(), GrooveGauge.NORMAL) + GrooveGauge.CLASS - GrooveGauge.NORMAL, GrooveGauge.EXHARDCLASS) + 1 : config.getGauge() + 1);
+					int type = gauge.isCourseGauge() ? GrooveGauge.CLASS
+							: gauge.getType() < config.getBottomShiftableGauge() ? gauge.getType() : config.getBottomShiftableGauge();
+					for (int i = type; i < len; i++) {
+						if (gauge.getGauge(i).getValue() > 0f && gauge.getGauge(i).isQualified()) {
+							type = i;
+						}
+					}
+					gauge.setType(type);
+				} else if (g == 0) {
+					switch(config.getGaugeAutoShift()) {
+					case PlayerConfig.GAUGEAUTOSHIFT_NONE:
+						// FAILED移行
+						state = STATE_FAILED;
+						timer.setTimerOn(TIMER_FAILED);
+						if (resource.mediaLoadFinished()) {
+							main.getAudioProcessor().stop((Note) null);
+						}
+						play(PLAY_STOP);
+						Logger.getGlobal().info("STATE_FAILEDに移行");
+						break;
+					case PlayerConfig.GAUGEAUTOSHIFT_CONTINUE:
+						break;
+					case PlayerConfig.GAUGEAUTOSHIFT_SURVIVAL_TO_GROOVE:
+						if(!gauge.isCourseGauge()) {
+							// GAS処理
+							gauge.setType(GrooveGauge.NORMAL);
+						}
+						break;
+					}
+				}
+			}
+			// 閉店処理
+			case STATE_FAILED -> {
+				keyinput.stopJudge();
+				keysound.stopBGPlay();
+				if ((input.startPressed() ^ input.isSelectPressed()) && resource.getCourseBMSModels() == null
+						&& autoplay.mode == BMSPlayerMode.Mode.PLAY) {
+					if (!resource.isUpdateScore()) {
+						resource.getReplayData().randomoptionseed = -1;
+						Logger.getGlobal().info("アシストモード時は同じ譜面でリプレイできません");
+					} else if (input.startPressed()) {
+						resource.getReplayData().randomoptionseed = -1;
+						Logger.getGlobal().info("オプションを変更せずリプレイ");
+					} else {
+						resource.setScoreData(createScoreData());
+						Logger.getGlobal().info("同じ譜面でリプレイ");
+					}
+					saveConfig();
+					resource.reloadBMSFile();
+					main.changeState(MainStateType.PLAY);
+				} else if (timer.getNowTime(TIMER_FAILED) > skin.getClose()) {
+					main.getAudioProcessor().setGlobalPitch(1f);
+					if (resource.mediaLoadFinished()) {
+						resource.getBGAManager().stop();
+					}
+					if (autoplay.mode == BMSPlayerMode.Mode.PLAY || autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
+						resource.setScoreData(createScoreData());
+					}
+					resource.setCombo(judge.getCourseCombo());
+					resource.setMaxcombo(judge.getCourseMaxcombo());
+					saveConfig();
+					if (timer.isTimerOn(TIMER_PLAY)) {
+						for (long l = timer.getTimer(TIMER_FAILED) - timer.getTimer(TIMER_PLAY); l < playtime + 500; l += 500) {
+							for(int i = 0; i < gaugelog.length; i++) {
+								gaugelog[i].add(0f);
+							}
+						}
+					}
+					resource.setGauge(gaugelog);
+					resource.setGrooveGauge(gauge);
+					resource.setAssist(assist);
+					input.setEnable(true);
+					input.setStartTime(0);
+					if (autoplay.mode == BMSPlayerMode.Mode.PRACTICE) {
+						state = STATE_PRACTICE;
+					} else if (resource.getScoreData() != null) {
+						main.changeState(MainStateType.RESULT);
 					} else {
 						main.changeState(MainStateType.MUSICSELECT);
 					}
 				}
 			}
-			break;
+			// 完奏処理
+			case STATE_FINISHED -> {
+				keyinput.stopJudge();
+				keysound.stopBGPlay();
+				if (timer.getNowTime(TIMER_MUSIC_END) > skin.getFinishMargin()) {
+					timer.switchTimer(TIMER_FADEOUT, true);
+				}
+				if (timer.getNowTime(TIMER_FADEOUT) > skin.getFadeout()) {
+					main.getAudioProcessor().setGlobalPitch(1f);
+					resource.getBGAManager().stop();
+
+					if (autoplay.mode == BMSPlayerMode.Mode.PLAY || autoplay.mode == BMSPlayerMode.Mode.REPLAY) {
+						resource.setScoreData(createScoreData());
+					}
+					resource.setCombo(judge.getCourseCombo());
+					resource.setMaxcombo(judge.getCourseMaxcombo());
+					saveConfig();
+					resource.setGauge(gaugelog);
+					resource.setGrooveGauge(gauge);
+					resource.setAssist(assist);
+					input.setEnable(true);
+					input.setStartTime(0);
+					if (autoplay.mode == BMSPlayerMode.Mode.PRACTICE) {
+						state = STATE_PRACTICE;
+					} else if (resource.getScoreData() != null) {
+						Logger.getGlobal().info("\"score\": " + resource.getScoreData());
+						main.changeState(MainStateType.RESULT);
+					} else {
+						if (resource.mediaLoadFinished()) {
+							main.getAudioProcessor().stop((Note) null);
+						}
+						if (resource.getCourseBMSModels() != null && resource.nextCourse()) {
+							main.changeState(MainStateType.PLAY);
+						} else if(resource.nextSong()){
+							main.changeState(MainStateType.DECIDE);
+						} else {
+							main.changeState(MainStateType.MUSICSELECT);
+						}
+					}
+				}
+			}
 		}
 
 		prevtime = micronow;
@@ -738,7 +777,7 @@ public class BMSPlayer extends MainState {
 
 	public void setPlaySpeed(int playspeed) {
 		this.playspeed = playspeed;
-		if (main.getConfig().getAudioFastForward() == Config.AUDIO_PLAY_FREQ) {
+		if (main.getConfig().getAudioConfig().getFastForward() == FrequencyType.FREQUENCY) {
 			main.getAudioProcessor().setGlobalPitch(playspeed / 100f);
 		}
 	}
@@ -769,7 +808,6 @@ public class BMSPlayer extends MainState {
 	}
 
 	private void saveConfig() {
-		final PlayerResource resource = main.getPlayerResource();
 		for (CourseData.CourseDataConstraint c : resource.getConstraint()) {
 			if (c == NO_SPEED) {
 				return;
@@ -777,7 +815,7 @@ public class BMSPlayer extends MainState {
 		}
 		PlayConfig pc = resource.getPlayerConfig().getPlayConfig(model.getMode()).getPlayconfig();
 		if (pc.getFixhispeed() != PlayConfig.FIX_HISPEED_OFF) {
-			pc.setDuration(lanerender.getGreenValue());
+			pc.setDuration(lanerender.getDuration());
 		} else {
 			pc.setHispeed(lanerender.getHispeed());
 		}
@@ -786,11 +824,11 @@ public class BMSPlayer extends MainState {
 		pc.setHidden(lanerender.getHiddenCover());
 	}
 
-	public IRScoreData createScoreData() {
-		final PlayerResource resource = main.getPlayerResource();
+	public ScoreData createScoreData() {
 		final PlayerConfig config = resource.getPlayerConfig();
-		IRScoreData score = judge.getScoreData();
-		if (score.getEpg() + score.getLpg() + score.getEgr() + score.getLgr() + score.getEgd() + score.getLgd() + score.getEbd() + score.getLbd() == 0) {
+		ScoreData score = judge.getScoreData();
+		if (resource.getCourseBMSModels() == null
+				&& (score.getEpg() + score.getLpg() + score.getEgr() + score.getLgr() + score.getEgd() + score.getLgd() + score.getEbd() + score.getLbd() == 0)) {
 			return null;
 		}
 
@@ -799,7 +837,7 @@ public class BMSPlayer extends MainState {
 			if (assist > 0) {
 				if(resource.getCourseBMSModels() == null) clear = assist == 1 ? ClearType.LightAssistEasy : ClearType.AssistEasy;
 			} else {
-				if (notes == this.judge.getCombo()) {
+				if (judge.getPastNotes() == judge.getCombo()) {
 					if (judge.getJudgeCount(2) == 0) {
 						if (judge.getJudgeCount(1) == 0) {
 							clear = ClearType.Max;
@@ -816,8 +854,9 @@ public class BMSPlayer extends MainState {
 		}
 		score.setClear(clear.id);
 		score.setGauge(gauge.isTypeChanged() ? -1 : gauge.getType());
-		score.setOption(config.getRandom() + (model.getMode().player == 2
-				? (config.getRandom2() * 10 + config.getDoubleoption() * 100) : 0));
+		score.setOption(playinfo.randomoption + (model.getMode().player == 2
+				? (playinfo.randomoption2 * 10 + playinfo.doubleoption * 100) : 0));
+		score.setSeed((model.getMode().player == 2 ? playinfo.randomoption2seed * 65536 * 256 : 0) + playinfo.randomoptionseed);
 		score.encodeGhost(judge.getGhost());
 		// リプレイデータ保存。スコア保存されない場合はリプレイ保存しない
 		final ReplayData replay = resource.getReplayData();
@@ -826,52 +865,78 @@ public class BMSPlayer extends MainState {
 		replay.mode = config.getLnmode();
 		replay.date = Calendar.getInstance().getTimeInMillis() / 1000;
 		replay.keylog = main.getInputProcessor().getKeyInputLog();
-		for(KeyInputLog keyinput : replay.keylog) {
-			keyinput.time -= resource.getMarginTime();
-		}
-		replay.pattern = pattern.toArray(new PatternModifyLog[pattern.size()]);
-		replay.rand = model.getRandom();
+//		replay.pattern = playinfo.pattern;
+		replay.laneShufflePattern = playinfo.laneShufflePattern;
+		replay.rand = playinfo.rand;
 		replay.gauge = config.getGauge();
 		replay.sevenToNinePattern = config.getSevenToNinePattern();
-		replay.randomoption = config.getRandom();
-		replay.randomoption2 = config.getRandom2();
-		replay.doubleoption = config.getDoubleoption();
+		replay.randomoption = playinfo.randomoption;
+		replay.randomoptionseed = playinfo.randomoptionseed;
+		replay.randomoption2 = playinfo.randomoption2;
+		replay.randomoption2seed = playinfo.randomoption2seed;
+		replay.doubleoption = playinfo.doubleoption;
 		replay.config = replayConfig;
 
-		score.setPassnotes(notes);
-		score.setMinbp(score.getEbd() + score.getLbd() + score.getEpr() + score.getLpr() + score.getEms() + score.getLms() + resource.getSongdata().getNotes() - notes);
+		score.setPassnotes(judge.getPastNotes());
+		score.setMinbp(score.getEbd() + score.getLbd() + score.getEpr() + score.getLpr() + score.getEms() + score.getLms() + resource.getSongdata().getNotes() - judge.getPastNotes());
+		
+		long count = 0;
+		long avgduration = 0;
+		final int lanes = model.getMode().key;
+		for (TimeLine tl : model.getAllTimeLines()) {
+			for (int i = 0; i < lanes; i++) {
+				Note n = tl.getNote(i);
+				if (n != null && (n instanceof NormalNote || (n instanceof LongNote ln && 
+						!(((model.getLntype() == BMSModel.LNTYPE_LONGNOTE && ln.getType() == LongNote.TYPE_UNDEFINED)
+								|| ln.getType() == LongNote.TYPE_LONGNOTE)
+								&& ((LongNote) n).isEnd())))) {
+					int state = n.getState();
+					long time = n.getMicroPlayTime();
+					avgduration += state >= 1 && state <= 4 ? Math.abs(time) : 1000000;
+					count++;
+//					System.out.println(time);
+				}
+			}
+		}
+		score.setTotalDuration(avgduration);
+		score.setAvgjudge(avgduration / count);
+//		System.out.println(avgduration + " / " + count + " = " + score.getAvgjudge());
+
 		score.setDeviceType(main.getInputProcessor().getDeviceType());
+		score.setSkin(getSkin().header.getName());
 		return score;
 	}
 
 	public void stopPlay() {
 		if (state == STATE_PRACTICE) {
 			practice.saveProperty();
-			main.setTimerOn(TIMER_FADEOUT);
+			timer.setTimerOn(TIMER_FADEOUT);
 			state = STATE_PRACTICE_FINISHED;
 			return;
 		}
 		if (state == STATE_PRELOAD || state == STATE_READY) {
-			main.setTimerOn(TIMER_FADEOUT);
+			timer.setTimerOn(TIMER_FADEOUT);
 			state = STATE_PRACTICE_FINISHED;
 			return;
 		}
-		if (main.isTimerOn(TIMER_FAILED) || main.isTimerOn(TIMER_FADEOUT)) {
+		if (timer.isTimerOn(TIMER_FAILED) || timer.isTimerOn(TIMER_FADEOUT)) {
 			return;
 		}
-		if (state != STATE_FINISHED && notes == main.getPlayerResource().getSongdata().getNotes()) {
+		if (state != STATE_FINISHED && 
+				(judge.getPastNotes() == resource.getSongdata().getNotes()
+				|| resource.getPlayMode().mode == BMSPlayerMode.Mode.AUTOPLAY)) {
 			state = STATE_FINISHED;
-			main.setTimerOn(TIMER_FADEOUT);
+			timer.setTimerOn(TIMER_FADEOUT);
 			Logger.getGlobal().info("STATE_FINISHEDに移行");
-		} else if(state == STATE_FINISHED && !main.isTimerOn(TIMER_FADEOUT)) {
-			main.setTimerOn(TIMER_FADEOUT);
+		} else if(state == STATE_FINISHED && !timer.isTimerOn(TIMER_FADEOUT)) {
+			timer.setTimerOn(TIMER_FADEOUT);
 		} else if(state != STATE_FINISHED) {
 			state = STATE_FAILED;
-			main.setTimerOn(TIMER_FAILED);
-			if (main.getPlayerResource().mediaLoadFinished()) {
+			timer.setTimerOn(TIMER_FAILED);
+			if (resource.mediaLoadFinished()) {
 				main.getAudioProcessor().stop((Note) null);
 			}
-			play(SOUND_PLAYSTOP);
+			play(PLAY_STOP);
 			Logger.getGlobal().info("STATE_FAILEDに移行");
 		}
 	}
@@ -880,6 +945,7 @@ public class BMSPlayer extends MainState {
 	public void dispose() {
 		super.dispose();
 		lanerender.dispose();
+		practice.dispose();
 		Logger.getGlobal().info("システム描画のリソース解放");
 	}
 
@@ -894,10 +960,12 @@ public class BMSPlayer extends MainState {
 	public JudgeManager getJudgeManager() {
 		return judge;
 	}
+	
+	public ReplayData getOptionInformation() {
+		return playinfo;
+	}
 
 	public void update(int judge, long time) {
-		notes = this.judge.getPastNotes();
-
 		if (this.judge.getCombo() == 0) {
 			bga.setMisslayerTme(time);
 		}
@@ -905,16 +973,18 @@ public class BMSPlayer extends MainState {
 		// System.out.println("Now count : " + notes + " - " + totalnotes);
 
 		//フルコン判定
-		main.switchTimer(TIMER_FULLCOMBO_1P, notes == main.getPlayerResource().getSongdata().getNotes()
-				&& notes == this.judge.getCombo());
+		timer.switchTimer(TIMER_FULLCOMBO_1P, this.judge.getPastNotes() == resource.getSongdata().getNotes()
+				&& this.judge.getPastNotes() == this.judge.getCombo());
 
-		getScoreDataProperty().update(this.judge.getScoreData(), notes);
+		getScoreDataProperty().update(this.judge.getScoreData(), this.judge.getPastNotes());
 
-		main.switchTimer(TIMER_SCORE_A, getScoreDataProperty().qualifyRank(18));
-		main.switchTimer(TIMER_SCORE_AA, getScoreDataProperty().qualifyRank(21));
-		main.switchTimer(TIMER_SCORE_AAA, getScoreDataProperty().qualifyRank(24));
-		main.switchTimer(TIMER_SCORE_BEST, this.judge.getScoreData().getExscore() >= getScoreDataProperty().getBestScore());
-		main.switchTimer(TIMER_SCORE_TARGET, this.judge.getScoreData().getExscore() >= getScoreDataProperty().getRivalScore());
+		timer.switchTimer(TIMER_SCORE_A, getScoreDataProperty().qualifyRank(18));
+		timer.switchTimer(TIMER_SCORE_AA, getScoreDataProperty().qualifyRank(21));
+		timer.switchTimer(TIMER_SCORE_AAA, getScoreDataProperty().qualifyRank(24));
+		timer.switchTimer(TIMER_SCORE_BEST, this.judge.getScoreData().getExscore() >= getScoreDataProperty().getBestScore());
+		timer.switchTimer(TIMER_SCORE_TARGET, this.judge.getScoreData().getExscore() >= getScoreDataProperty().getRivalScore());
+
+		((PlaySkin)getSkin()).pomyu.PMcharaJudge = judge + 1;
 	}
 
 	public GrooveGauge getGauge() {
@@ -922,15 +992,11 @@ public class BMSPlayer extends MainState {
 	}
 
 	public boolean isNoteEnd() {
-		return notes == main.getPlayerResource().getSongdata().getNotes();
+		return judge.getPastNotes() == resource.getSongdata().getNotes();
 	}
 
 	public int getPastNotes() {
-		return notes;
-	}
-
-	public void setPastNotes(int notes) {
-		this.notes = notes;
+		return judge.getPastNotes();
 	}
 
 	public int getPlaytime() {

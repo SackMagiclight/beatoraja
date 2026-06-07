@@ -4,9 +4,12 @@ import static bms.player.beatoraja.ClearType.NoPlay;
 
 import java.util.Arrays;
 
-import bms.player.beatoraja.IRScoreData;
+import com.badlogic.gdx.math.MathUtils;
+
 import bms.player.beatoraja.MainController;
 import bms.player.beatoraja.MainState;
+import bms.player.beatoraja.ScoreData;
+import bms.player.beatoraja.input.BMSPlayerInputProcessor;
 import bms.player.beatoraja.ir.RankingData;
 
 public abstract class AbstractResult extends MainState {
@@ -31,9 +34,13 @@ public abstract class AbstractResult extends MainState {
 	 */
 	protected RankingData ranking;
 	/**
-	 * 全ノーツの平均ズレ
+	 * ランキング表示位置
 	 */
-	protected float avgduration;
+	protected int rankingOffset = 0;
+	/**
+	 * 全ノーツの平均ズレ(us)
+	 */
+	protected long avgduration;
 	/**
 	 * タイミング分布
 	 */
@@ -49,16 +56,12 @@ public abstract class AbstractResult extends MainState {
 	protected ReplayStatus[] saveReplay = new ReplayStatus[REPLAY_SIZE];
 	protected static final int REPLAY_SIZE = 4;
 	
-	public static final int SOUND_CLEAR = 0;
-	public static final int SOUND_FAIL = 1;
-	public static final int SOUND_CLOSE = 2;
-	
 	protected int gaugeType;
 
 	/**
 	 * 旧スコアデータ
 	 */
-	protected IRScoreData oldscore = new IRScoreData();
+	protected ScoreData oldscore = new ScoreData();
 
 	public AbstractResult(MainController main) {
 		super(main);
@@ -81,7 +84,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		NOTHING {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return false;
 			}
 		},
@@ -90,7 +93,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		SCORE_UPDATE {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getExscore() > oldscore.getExscore();
 			}
 		},
@@ -99,7 +102,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		SCORE_UPDATE_OR_EQUAL {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getExscore() >= oldscore.getExscore();
 			}
 		},
@@ -108,7 +111,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		MISSCOUNT_UPDATE {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getMinbp() < oldscore.getMinbp() || oldscore.getClear() == NoPlay.id;
 			}
 		},
@@ -117,7 +120,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		MISSCOUNT_UPDATE_OR_EQUAL {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getMinbp() <= oldscore.getMinbp() || oldscore.getClear() == NoPlay.id;
 			}
 		},
@@ -126,7 +129,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		MAXCOMBO_UPDATE {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getCombo() > oldscore.getCombo();
 			}
 		},
@@ -135,7 +138,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		MAXCOMBO_UPDATE_OR_EQUAL {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getCombo() >= oldscore.getCombo();
 			}
 		},
@@ -144,7 +147,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		CLEAR_UPDATE {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getClear() > oldscore.getClear();
 			}
 		},
@@ -153,7 +156,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		CLEAR_UPDATE_OR_EQUAL {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getClear() >= oldscore.getClear();
 			}
 		},
@@ -162,7 +165,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		ANYONE_UPDATE {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return newscore.getClear() > oldscore.getClear() || newscore.getCombo() > oldscore.getCombo() ||
 						newscore.getMinbp() < oldscore.getMinbp() || newscore.getExscore() > oldscore.getExscore();
 			}
@@ -172,7 +175,7 @@ public abstract class AbstractResult extends MainState {
 		 */
 		ALWAYS {
 			@Override
-			public boolean isQualified(IRScoreData oldscore, IRScoreData newscore) {
+			public boolean isQualified(ScoreData oldscore, ScoreData newscore) {
 				return true;
 			}
 		};
@@ -184,7 +187,7 @@ public abstract class AbstractResult extends MainState {
 		 * @param newscore 新スコアデータ
 		 * @return リプレイ保存条件を満たしていればtrue
 		 */
-		public abstract boolean isQualified(IRScoreData oldscore, IRScoreData newscore);
+		public abstract boolean isQualified(ScoreData oldscore, ScoreData newscore);
 
 		public static ReplayAutoSaveConstraint get(int index) {
 			if (index < 0 || index >= values().length) {
@@ -211,6 +214,10 @@ public abstract class AbstractResult extends MainState {
 		return state;
 	}
 	
+	public RankingData getRankingData() {
+		return ranking;
+	}
+	
 	public int getIRRank() {
 		return ranking != null ? ranking.getRank() : 0;
 	}
@@ -223,18 +230,44 @@ public abstract class AbstractResult extends MainState {
 		return ranking != null ? ranking.getTotalPlayer() : 0;
 	}
 	
-	public float getAverageDuration() {
+	public long getAverageDuration() {
 		return avgduration;
 	}
 	
-	public abstract IRScoreData getNewScore();
+	public abstract ScoreData getNewScore();
 	
-	public IRScoreData getOldScore() {
+	public ScoreData getOldScore() {
 		return oldscore;
 	}	
 	
 	public TimingDistribution getTimingDistribution() {
 		return timingDistribution;
+	}
+
+	public void input() {
+		BMSPlayerInputProcessor input = main.getInputProcessor();
+		int mov = -input.getScroll();
+		input.resetScroll();
+		if (mov != 0 && ranking != null) {
+			final int rankingMax = Math.max(1, ranking.getTotalPlayer());
+			rankingOffset = MathUtils.clamp(rankingOffset + mov, 0, rankingMax - 1);
+		}
+	}
+	
+	public int getRankingOffset() {
+		return rankingOffset;
+	}
+	
+	public float getRankingPosition() {
+		final int rankingMax = ranking != null ? Math.max(1, ranking.getTotalPlayer()) : 1;
+		return (float)rankingOffset / rankingMax;		
+	}
+	
+	public void setRankingPosition(float value) {
+		if (value >= 0 && value < 1) {
+			final int rankingMax = ranking != null ? Math.max(1, ranking.getTotalPlayer()) : 1;
+			rankingOffset = (int) (rankingMax * value);
+		}
 	}
 
 	/**

@@ -8,6 +8,8 @@ import bms.player.beatoraja.skin.property.*;
 import org.luaj.vm2.*;
 import org.luaj.vm2.lib.*;
 
+import com.badlogic.gdx.math.MathUtils;
+
 /**
  * 実行時にスキンからMainStateの数値などにアクセスできる関数を提供する
  */
@@ -31,6 +33,7 @@ public class MainStateAccessor {
 		table.set("time", this.new time());
 		table.set("set_timer", this.new set_timer());
 		table.set("event_exec", this.new event_exec());
+		table.set("event_index", this.new event_index());
 
 		// 具体的な数値の取得・設定など
 		table.set("rate", new ZeroArgFunction() {
@@ -72,39 +75,39 @@ public class MainStateAccessor {
 		table.set("volume_sys", new ZeroArgFunction() {
 			@Override
 			public LuaValue call() {
-				return LuaDouble.valueOf(state.main.getConfig().getSystemvolume());
+				return LuaDouble.valueOf(state.main.getConfig().getAudioConfig().getSystemvolume());
 			}
 		});
 		table.set("set_volume_sys", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
-				state.main.getConfig().setSystemvolume(value.tofloat());
+				state.main.getConfig().getAudioConfig().setSystemvolume(value.tofloat());
 				return LuaBoolean.TRUE;
 			}
 		});
 		table.set("volume_key", new ZeroArgFunction() {
 			@Override
 			public LuaValue call() {
-				return LuaDouble.valueOf(state.main.getConfig().getKeyvolume());
+				return LuaDouble.valueOf(state.main.getConfig().getAudioConfig().getKeyvolume());
 			}
 		});
 		table.set("set_volume_key", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
-				state.main.getConfig().setKeyvolume(value.tofloat());
+				state.main.getConfig().getAudioConfig().setKeyvolume(value.tofloat());
 				return LuaBoolean.TRUE;
 			}
 		});
 		table.set("volume_bg", new ZeroArgFunction() {
 			@Override
 			public LuaValue call() {
-				return LuaDouble.valueOf(state.main.getConfig().getBgvolume());
+				return LuaDouble.valueOf(state.main.getConfig().getAudioConfig().getBgvolume());
 			}
 		});
 		table.set("set_volume_bg", new OneArgFunction() {
 			@Override
 			public LuaValue call(LuaValue value) {
-				state.main.getConfig().setBgvolume(value.tofloat());
+				state.main.getConfig().getAudioConfig().setBgvolume(value.tofloat());
 				return LuaBoolean.TRUE;
 			}
 		});
@@ -132,6 +135,31 @@ public class MainStateAccessor {
 					return LuaDouble.valueOf(player.getGauge().getType());
 				}
 				return LuaInteger.ZERO;
+			}
+		});
+		table.set("audio_play", new TwoArgFunction() {
+			@Override
+			public LuaValue call(LuaValue path, LuaValue volume) {
+				float vol = volume.tofloat();
+				vol = vol <= 0 ? 1 : MathUtils.clamp(vol, 0.0f, 2.0f);
+				state.main.getAudioProcessor().play(path.tojstring(), state.main.getConfig().getAudioConfig().getSystemvolume() * vol, false);
+				return LuaBoolean.TRUE;
+			}
+		});
+		table.set("audio_loop", new TwoArgFunction() {
+			@Override
+			public LuaValue call(LuaValue path, LuaValue volume) {
+				float vol = volume.tofloat();
+				vol = vol <= 0 ? 1 : MathUtils.clamp(vol, 0.0f, 2.0f);
+				state.main.getAudioProcessor().play(path.tojstring(), state.main.getConfig().getAudioConfig().getSystemvolume() * vol, true);
+				return LuaBoolean.TRUE;
+			}
+		});
+		table.set("audio_stop", new OneArgFunction() {
+			@Override
+			public LuaValue call(LuaValue path) {
+				state.main.getAudioProcessor().stop(path.tojstring());
+				return LuaBoolean.TRUE;
 			}
 		});
 	}
@@ -167,7 +195,7 @@ public class MainStateAccessor {
 	private class float_number extends OneArgFunction {
 		@Override
 		public LuaValue call(LuaValue luaValue) {
-			FloatProperty prop = FloatPropertyFactory.getFloatProperty(luaValue.toint());
+			FloatProperty prop = FloatPropertyFactory.getRateProperty(luaValue.toint());
 			return LuaDouble.valueOf(prop.get(state));
 		}
 	}
@@ -209,7 +237,7 @@ public class MainStateAccessor {
 	private class timer extends OneArgFunction {
 		@Override
 		public LuaValue call(LuaValue value) {
-			return LuaNumber.valueOf(state.main.getMicroTimer(value.toint()));
+			return LuaNumber.valueOf(state.timer.getMicroTimer(value.toint()));
 		}
 	}
 
@@ -225,7 +253,7 @@ public class MainStateAccessor {
 	private class time extends ZeroArgFunction {
 		@Override
 		public LuaValue call() {
-			return LuaNumber.valueOf(state.main.getNowMicroTime());
+			return LuaNumber.valueOf(state.timer.getNowMicroTime());
 		}
 	}
 
@@ -240,7 +268,7 @@ public class MainStateAccessor {
 			int id = timerId.toint();
 			if (!SkinPropertyMapper.isTimerWritableBySkin(id))
 				throw new IllegalArgumentException("指定されたタイマーはスキンから変更できません");
-			state.main.setMicroTimer(id, timerValue.tolong());
+			state.timer.setMicroTimer(id, timerValue.tolong());
 			return LuaBoolean.TRUE;
 		}
 	}
@@ -275,4 +303,17 @@ public class MainStateAccessor {
 			return id;
 		}
 	}
+
+	/**
+	 * ID指定でイベント(BUTTON_*)のインデックスを取得する関数
+	 * NOTE: 呼び出しの度にIntegerPropertyを生成しており効率が悪いため非推奨
+	 */
+	private class event_index extends OneArgFunction {
+		@Override
+		public LuaValue call(LuaValue luaValue) {
+			IntegerProperty prop = IntegerPropertyFactory.getImageIndexProperty(luaValue.toint());
+			return LuaNumber.valueOf(prop.get(state));
+		}
+	}
+
 }

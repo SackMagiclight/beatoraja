@@ -4,7 +4,6 @@ import java.nio.ByteBuffer;
 import java.nio.file.*;
 
 import com.portaudio.*;
-
 import bms.player.beatoraja.Config;
 
 /**
@@ -49,13 +48,14 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 		// Get the default device and setup the stream parameters.
 		int deviceId = 0;
 		for(int i = 0;i < devices.length;i++) {
-			if(devices[i].name.equals(config.getAudioDriverName())) {
+			if(devices[i].name.equals(config.getAudioConfig().getDriverName())) {
 				deviceId = i;
 				break;
 			}
 		}
 		DeviceInfo deviceInfo = devices[ deviceId ];
-		sampleRate = (int)deviceInfo.defaultSampleRate;
+		
+		setSampleRate(config.getAudioConfig().getSampleRate() <= 0 ? (int)deviceInfo.defaultSampleRate : config.getAudioConfig().getSampleRate());
 		channels = 2;
 //		System.out.println( "  deviceId    = " + deviceId );
 //		System.out.println( "  sampleRate  = " + sampleRate );
@@ -64,20 +64,20 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 		StreamParameters streamParameters = new StreamParameters();
 		streamParameters.channelCount = channels;
 		streamParameters.device = deviceId;
-		int framesPerBuffer = config.getAudioDeviceBufferSize();
-		streamParameters.suggestedLatency = ((double)framesPerBuffer) / sampleRate;
+		int framesPerBuffer = config.getAudioConfig().getDeviceBufferSize();
+		streamParameters.suggestedLatency = ((double)framesPerBuffer) / getSampleRate();
 //		System.out.println( "  suggestedLatency = " + streamParameters.suggestedLatency );
 
 		int flags = 0;
 		
 		// Open a stream for output.
-		stream = PortAudio.openStream( null, streamParameters, sampleRate, framesPerBuffer, flags );
+		stream = PortAudio.openStream( null, streamParameters, getSampleRate(), framesPerBuffer, flags );
 
 		stream.start();
 
 		mixer = new Thread(this);
 		buffer = new float[framesPerBuffer * channels];
-		inputs = new MixerInput[config.getAudioDeviceSimultaneousSources()];
+		inputs = new MixerInput[config.getAudioConfig().getDeviceSimultaneousSources()];
 		for (int i = 0; i < inputs.length; i++) {
 			inputs[i] = new MixerInput();
 		}
@@ -137,6 +137,19 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 	}
 
 	@Override
+	protected boolean isPlaying(PCM id) {
+		synchronized (inputs) {
+			for (MixerInput input : inputs) {
+				if (input.pcm == id) {
+					return input.pos != -1;
+				}
+			}				
+		}
+		return false;
+	}
+
+
+	@Override
 	protected void stop(PCM id) {
 		synchronized (inputs) {
 			for (MixerInput input : inputs) {
@@ -158,6 +171,17 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 		}
 	}
 
+	@Override
+	protected void setVolume(PCM id, int channel, float volume) {
+		synchronized (inputs) {
+			for (MixerInput input : inputs) {
+				if (input.pcm == id && input.channel == channel) {
+					input.volume = volume;
+				}
+			}
+		}
+	}
+
 	public void run() {
 		while(!stop) {
 			final float gpitch = getGlobalPitch();
@@ -167,22 +191,22 @@ public class PortAudioDriver extends AbstractAudioDriver<PCM> implements Runnabl
 					float wav_r = 0;
 					for (MixerInput input : inputs) {
 						if (input.pos != -1) {
-							if(input.pcm instanceof FloatPCM) {
-								final float[] sample = (float[]) input.pcm.sample;
-								wav_l += sample[input.pos + input.pcm.start] * input.volume;
-								wav_r += sample[input.pos+1 + input.pcm.start] * input.volume;																
-							} else if(input.pcm instanceof ShortDirectPCM) {
-								final ByteBuffer sample = (ByteBuffer) input.pcm.sample;
-								wav_l += ((float) sample.getShort((input.pos + input.pcm.start) * 2)) * input.volume / Short.MAX_VALUE;
-								wav_r += ((float) sample.getShort((input.pos+1 + input.pcm.start) * 2)) * input.volume / Short.MAX_VALUE;																
-							} else if(input.pcm instanceof ShortPCM) {
-								final short[] sample = (short[]) input.pcm.sample;
-								wav_l += ((float) sample[input.pos + input.pcm.start]) * input.volume / Short.MAX_VALUE;
-								wav_r += ((float) sample[input.pos+1 + input.pcm.start]) * input.volume / Short.MAX_VALUE;																
-							} else if(input.pcm instanceof BytePCM) {
-								final byte[] sample = (byte[]) input.pcm.sample;
-								wav_l += ((float) (sample[input.pos + input.pcm.start] - 128)) * input.volume / Byte.MAX_VALUE;
-								wav_r += ((float) (sample[input.pos+1 + input.pcm.start] - 128)) * input.volume / Byte.MAX_VALUE;																
+							if(input.pcm instanceof FloatPCM floatPCM) {
+								final float[] sample = floatPCM.sample;
+								wav_l += sample[input.pos + floatPCM.start] * input.volume;
+								wav_r += sample[input.pos+1 + floatPCM.start] * input.volume;																
+							} else if(input.pcm instanceof ShortDirectPCM shortPCM) {
+								final ByteBuffer sample = shortPCM.sample;
+								wav_l += ((float) sample.getShort((input.pos + shortPCM.start) * 2)) * input.volume / Short.MAX_VALUE;
+								wav_r += ((float) sample.getShort((input.pos+1 + shortPCM.start) * 2)) * input.volume / Short.MAX_VALUE;																
+							} else if(input.pcm instanceof ShortPCM shortPCM) {
+								final short[] sample = shortPCM.sample;
+								wav_l += ((float) sample[input.pos + shortPCM.start]) * input.volume / Short.MAX_VALUE;
+								wav_r += ((float) sample[input.pos+1 + shortPCM.start]) * input.volume / Short.MAX_VALUE;																
+							} else if(input.pcm instanceof BytePCM bytePCM) {
+								final byte[] sample = bytePCM.sample;
+								wav_l += ((float) (sample[input.pos + bytePCM.start] - 128)) * input.volume / Byte.MAX_VALUE;
+								wav_r += ((float) (sample[input.pos+1 + bytePCM.start] - 128)) * input.volume / Byte.MAX_VALUE;																
 							}
 							input.posf += gpitch * input.pitch;
 							int inc = (int)input.posf;

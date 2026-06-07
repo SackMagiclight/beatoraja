@@ -21,15 +21,16 @@ import bms.player.beatoraja.play.TargetProperty;
 import bms.player.beatoraja.song.*;
 import javafx.application.Platform;
 import javafx.event.ActionEvent;
+import javafx.event.Event;
 import javafx.event.EventHandler;
 import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
+import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.GridPane;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.VBox;
-import javafx.stage.DirectoryChooser;
-import javafx.stage.FileChooser;
+import javafx.stage.*;
 import javafx.stage.FileChooser.ExtensionFilter;
 import twitter4j.Twitter;
 import twitter4j.TwitterException;
@@ -44,6 +45,7 @@ import twitter4j.conf.ConfigurationBuilder;
  * @author exch
  */
 public class PlayConfigurationView implements Initializable {
+
 
 	// TODO スキンプレビュー機能
 
@@ -75,6 +77,8 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private Tab courseTab;
 	@FXML
+    private Tab streamTab;
+	@FXML
 	private HBox controlPanel;
 
 	@FXML
@@ -99,7 +103,13 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private Spinner<Integer> gvalue;
 	@FXML
+	private CheckBox enableConstant;
+	@FXML
+	private Spinner<Integer> constFadeinTime;
+	@FXML
 	private Spinner<Double> hispeedmargin;
+	@FXML
+	private CheckBox hispeedautoadjust;
 
 	@FXML
 	private ComboBox<Integer> scoreop;
@@ -136,7 +146,9 @@ public class PlayConfigurationView implements Initializable {
 	private TextField soundpath;
 
 	@FXML
-	private NumericSpinner<Integer> judgetiming;
+	private NumericSpinner<Integer> notesdisplaytiming;
+	@FXML
+	private CheckBox notesdisplaytimingautoadjust;
 	@FXML
 	private CheckBox bpmguide;
 	@FXML
@@ -144,7 +156,19 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private ComboBox<Integer> bottomshiftablegauge;
 	@FXML
-	private Spinner<Integer> exjudge;
+	private CheckBox customjudge;
+	@FXML
+	private Spinner<Integer> njudgepg;
+	@FXML
+	private Spinner<Integer> njudgegr;
+	@FXML
+	private Spinner<Integer> njudgegd;
+	@FXML
+	private Spinner<Integer> sjudgepg;
+	@FXML
+	private Spinner<Integer> sjudgegr;
+	@FXML
+	private Spinner<Integer> sjudgegd;
 	@FXML
 	private ComboBox<Integer> minemode;
 	@FXML
@@ -152,11 +176,17 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private ComboBox<Integer> longnotemode;
 	@FXML
+	private Slider longnoterate;
+	@FXML
 	private Spinner<Integer> hranthresholdbpm;
 	@FXML
 	private ComboBox<Integer> seventoninepattern;
 	@FXML
 	private ComboBox<Integer> seventoninetype;
+	@FXML
+	private Spinner<Integer> exitpressduration;
+	@FXML
+	private CheckBox chartpreview;
 	@FXML
 	private CheckBox guidese;
 	@FXML
@@ -171,7 +201,7 @@ public class PlayConfigurationView implements Initializable {
 	@FXML
 	private CheckBox showhiddennote;
 	@FXML
-	private ComboBox<Integer> target;
+	private ComboBox<String> target;
 
 	@FXML
 	private ComboBox<Integer> judgealgorithm;
@@ -225,6 +255,8 @@ public class PlayConfigurationView implements Initializable {
 	private IRConfigurationView irController;
 	@FXML
 	private TableEditorView tableController;
+	@FXML
+    private StreamEditorView streamController;
 
 	private Config config;
 	private PlayerConfig player;
@@ -234,6 +266,12 @@ public class PlayConfigurationView implements Initializable {
 	private boolean songUpdated = false;
 
 	private RequestToken requestToken = null;
+
+	@FXML
+	public CheckBox discord;
+
+	@FXML
+	public CheckBox clipboardScreenshot;
 
 	static void initComboBox(ComboBox<Integer> combo, final String[] values) {
 		combo.setCellFactory((param) -> new OptionListCell(values));
@@ -269,12 +307,6 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(scrollmode, new String[] { "OFF", "REMOVE", "ADD" });
 		initComboBox(longnotemode, new String[] { "OFF", "REMOVE", "ADD LN", "ADD CN", "ADD HCN", "ADD ALL" });
 
-		TargetProperty[] targets = TargetProperty.getAllTargetProperties();
-		String[] targetString = new String[targets.length];
-		for(int i  =0;i < targets.length;i++) {
-			targetString[i] = targets[i].getName();
-		}
-		initComboBox(target, targetString);
 		initComboBox(judgealgorithm, new String[] { arg1.getString("JUDGEALG_LR2"), arg1.getString("JUDGEALG_AC"), arg1.getString("JUDGEALG_BOTTOM_PRIORITY") });
 		String[] autosaves = new String[]{arg1.getString("NONE"),arg1.getString("BETTER_SCORE"),arg1.getString("BETTER_OR_SAME_SCORE"),arg1.getString("BETTER_MISSCOUNT")
 				,arg1.getString("BETTER_OR_SAME_MISSCOUNT"),arg1.getString("BETTER_COMBO"),arg1.getString("BETTER_OR_SAME_COMBO"),
@@ -284,7 +316,7 @@ public class PlayConfigurationView implements Initializable {
 		initComboBox(autosavereplay3, autosaves);
 		initComboBox(autosavereplay4, autosaves);
 
-		judgetiming.setValueFactoryValues(PlayerConfig.JUDGETIMING_MIN, PlayerConfig.JUDGETIMING_MAX, 0, 1);
+		notesdisplaytiming.setValueFactoryValues(PlayerConfig.JUDGETIMING_MIN, PlayerConfig.JUDGETIMING_MAX, 0, 1);
 		resourceController.init(this);
 
 		checkNewVersion();
@@ -331,7 +363,7 @@ public class PlayConfigurationView implements Initializable {
 
 		players.getItems().setAll(PlayerConfig.readAllPlayerID(config.getPlayerpath()));
 		videoController.update(config);
-		audioController.update(config);
+		audioController.update(config.getAudioConfig());
 		musicselectController.update(config);
 
 		bgmpath.setText(config.getBgmpath());
@@ -339,17 +371,12 @@ public class PlayConfigurationView implements Initializable {
 
 		resourceController.update(config);
 
-		showhiddennote.setSelected(config.isShowhiddennote());
-
-		autosavereplay1.getSelectionModel().select(config.getAutoSaveReplay()[0]);
-		autosavereplay2.getSelectionModel().select(config.getAutoSaveReplay()[1]);
-		autosavereplay3.getSelectionModel().select(config.getAutoSaveReplay()[2]);
-		autosavereplay4.getSelectionModel().select(config.getAutoSaveReplay()[3]);
-
 		skinController.update(config);
         // int b = Boolean.valueOf(config.getJKOC()).compareTo(false);
 
         usecim.setSelected(config.isCacheSkinImage());
+        discord.setSelected(config.isUseDiscordRPC());
+        clipboardScreenshot.setSelected(config.isSetClipboardWhenScreenshot());
 
 		enableIpfs.setSelected(config.isEnableIpfs());
 		ipfsurl.setText(config.getIpfsUrl());
@@ -406,29 +433,48 @@ public class PlayConfigurationView implements Initializable {
 		doubleop.getSelectionModel().select(player.getDoubleoption());
 		seventoninepattern.getSelectionModel().select(player.getSevenToNinePattern());
 		seventoninetype.getSelectionModel().select(player.getSevenToNineType());
+		exitpressduration.getValueFactory().setValue(player.getExitPressDuration());
+		chartpreview.setSelected(player.isChartPreview());
 		guidese.setSelected(player.isGuideSE());
 		windowhold.setSelected(player.isWindowHold());
 		gaugeop.getSelectionModel().select(player.getGauge());
 		lntype.getSelectionModel().select(player.getLnmode());
 
-		judgetiming.getValueFactory().setValue(player.getJudgetiming());
+		notesdisplaytiming.getValueFactory().setValue(player.getJudgetiming());
+		notesdisplaytimingautoadjust.setSelected(player.isNotesDisplayTimingAutoAdjust());
 
 		bpmguide.setSelected(player.isBpmguide());
 		gaugeautoshift.setValue(player.getGaugeAutoShift());
 		bottomshiftablegauge.setValue(player.getBottomShiftableGauge());
 
-		exjudge.getValueFactory().setValue(player.getJudgewindowrate());
+		customjudge.setSelected(player.isCustomJudge());
+		njudgepg.getValueFactory().setValue(player.getKeyJudgeWindowRatePerfectGreat());
+		njudgegr.getValueFactory().setValue(player.getKeyJudgeWindowRateGreat());
+		njudgegd.getValueFactory().setValue(player.getKeyJudgeWindowRateGood());
+		sjudgepg.getValueFactory().setValue(player.getScratchJudgeWindowRatePerfectGreat());
+		sjudgegr.getValueFactory().setValue(player.getScratchJudgeWindowRateGreat());
+		sjudgegd.getValueFactory().setValue(player.getScratchJudgeWindowRateGood());
 		minemode.getSelectionModel().select(player.getMineMode());
 		scrollmode.getSelectionModel().select(player.getScrollMode());
 		longnotemode.getSelectionModel().select(player.getLongnoteMode());
+		longnoterate.setValue(player.getLongnoteRate());
 		hranthresholdbpm.getValueFactory().setValue(player.getHranThresholdBPM());
 		judgeregion.setSelected(player.isShowjudgearea());
 		markprocessednote.setSelected(player.isMarkprocessednote());
 		extranotedepth.getValueFactory().setValue(player.getExtranoteDepth());
 
-		target.setValue(player.getTarget());
+		autosavereplay1.getSelectionModel().select(player.getAutoSaveReplay()[0]);
+		autosavereplay2.getSelectionModel().select(player.getAutoSaveReplay()[1]);
+		autosavereplay3.getSelectionModel().select(player.getAutoSaveReplay()[2]);
+		autosavereplay4.getSelectionModel().select(player.getAutoSaveReplay()[3]);
+
+		String[] targets = player.getTargetlist();
+		target.getItems().setAll(targets);
+		target.setValue(player.getTargetid());
+		showhiddennote.setSelected(player.isShowhiddennote());
 
 		irController.update(player);
+		streamController.update(player);
 
 		txtTwitterPIN.setDisable(true);
 		twitterPINButton.setDisable(true);
@@ -459,12 +505,7 @@ public class PlayConfigurationView implements Initializable {
 		config.setBgmpath(bgmpath.getText());
 		config.setSoundpath(soundpath.getText());
 
-		resourceController.commit(config);
-
-		config.setShowhiddennote(showhiddennote.isSelected());
-
-		config.setAutoSaveReplay( new int[]{autosavereplay1.getValue(),autosavereplay2.getValue(),
-				autosavereplay3.getValue(),autosavereplay4.getValue()});
+		resourceController.commit();
 
         // jkoc_hack is integer but *.setJKOC needs boolean type
 
@@ -472,6 +513,9 @@ public class PlayConfigurationView implements Initializable {
 
 		config.setEnableIpfs(enableIpfs.isSelected());
 		config.setIpfsUrl(ipfsurl.getText());
+
+		config.setUseDiscordRPC(discord.isSelected());
+		config.setClipboardWhenScreenshot(clipboardScreenshot.isSelected());
 
 		commitPlayer();
 
@@ -496,28 +540,44 @@ public class PlayConfigurationView implements Initializable {
 		player.setDoubleoption(doubleop.getValue());
 		player.setSevenToNinePattern(seventoninepattern.getValue());
 		player.setSevenToNineType(seventoninetype.getValue());
+		player.setExitPressDuration(getValue(exitpressduration));
+		player.setChartPreview(chartpreview.isSelected());
 		player.setGuideSE(guidese.isSelected());
 		player.setWindowHold(windowhold.isSelected());
 		player.setGauge(gaugeop.getValue());
 		player.setLnmode(lntype.getValue());
-		player.setJudgetiming(getValue(judgetiming));
+		player.setJudgetiming(getValue(notesdisplaytiming));
+		player.setNotesDisplayTimingAutoAdjust(notesdisplaytimingautoadjust.isSelected());
 
 		player.setBpmguide(bpmguide.isSelected());
 		player.setGaugeAutoShift(gaugeautoshift.getValue());
 		player.setBottomShiftableGauge(bottomshiftablegauge.getValue());
-		player.setJudgewindowrate(getValue(exjudge));
+		player.setCustomJudge(customjudge.isSelected());
+		player.setKeyJudgeWindowRatePerfectGreat(getValue(njudgepg));
+		player.setKeyJudgeWindowRateGreat(getValue(njudgegr));
+		player.setKeyJudgeWindowRateGood(getValue(njudgegd));
+		player.setScratchJudgeWindowRatePerfectGreat(getValue(sjudgepg));
+		player.setScratchJudgeWindowRateGreat(getValue(sjudgegr));
+		player.setScratchJudgeWindowRateGood(getValue(sjudgegd));
 		player.setMineMode(minemode.getValue());
 		player.setScrollMode(scrollmode.getValue());
 		player.setLongnoteMode(longnotemode.getValue());
+		player.setLongnoteRate(longnoterate.getValue());
 		player.setHranThresholdBPM(getValue(hranthresholdbpm));
 		player.setMarkprocessednote(markprocessednote.isSelected());
 		player.setExtranoteDepth(extranotedepth.getValue());
 
+		player.setAutoSaveReplay( new int[]{autosavereplay1.getValue(),autosavereplay2.getValue(),
+				autosavereplay3.getValue(),autosavereplay4.getValue()});
+
 		player.setShowjudgearea(judgeregion.isSelected());
-		player.setTarget(target.getValue());
+		player.setTargetid(target.getValue());
+
+		player.setShowhiddennote(showhiddennote.isSelected());
 
 		inputController.commit();
 		irController.commit();
+		streamController.commit();
 
 		updatePlayConfig();
 		skinController.commit();
@@ -563,6 +623,8 @@ public class PlayConfigurationView implements Initializable {
 			PlayConfig conf = player.getPlayConfig(Mode.valueOf(pc.name())).getPlayconfig();
 			conf.setHispeed(getValue(hispeed).floatValue());
 			conf.setDuration(getValue(gvalue));
+			conf.setEnableConstant(enableConstant.isSelected());
+			conf.setConstantFadeinTime(getValue(constFadeinTime));
 			conf.setHispeedMargin(getValue(hispeedmargin).floatValue());
 			conf.setFixhispeed(fixhispeed.getValue());
 			conf.setEnablelanecover(enableLanecover.isSelected());
@@ -575,12 +637,14 @@ public class PlayConfigurationView implements Initializable {
 			conf.setLift(getValue(lift) / 1000f);
 			conf.setHidden(getValue(hidden) / 1000f);
 			conf.setJudgetype(JudgeAlgorithm.values()[judgealgorithm.getValue()].name());
-
+			conf.setHispeedAutoAdjust(hispeedautoadjust.isSelected());
 		}
 		pc = playconfig.getValue();
 		PlayConfig conf = player.getPlayConfig(Mode.valueOf(pc.name())).getPlayconfig();
 		hispeed.getValueFactory().setValue((double) conf.getHispeed());
 		gvalue.getValueFactory().setValue(conf.getDuration());
+		enableConstant.setSelected(conf.isEnableConstant());
+		constFadeinTime.getValueFactory().setValue(conf.getConstantFadeinTime());
 		hispeedmargin.getValueFactory().setValue((double) conf.getHispeedMargin());
 		fixhispeed.setValue(conf.getFixhispeed());
 		enableLanecover.setSelected(conf.isEnablelanecover());
@@ -593,6 +657,7 @@ public class PlayConfigurationView implements Initializable {
 		lift.getValueFactory().setValue((int) (conf.getLift() * 1000));
 		hidden.getValueFactory().setValue((int) (conf.getHidden() * 1000));
 		judgealgorithm.setValue(JudgeAlgorithm.getIndex(conf.getJudgetype()));
+		hispeedautoadjust.setSelected(conf.isEnableHispeedAutoAdjust());
 	}
 
 	private <T> T getValue(Spinner<T> spinner) {
@@ -612,22 +677,26 @@ public class PlayConfigurationView implements Initializable {
 		optionTab.setDisable(true);
 		otherTab.setDisable(true);
 		irTab.setDisable(true);
+		streamTab.setDisable(true);
 		controlPanel.setDisable(true);
 
-		MainLoader.play(null, bms.player.beatoraja.PlayerResource.PlayMode.PLAY, true, config, player, songUpdated);
+		MainLoader.play(null, bms.player.beatoraja.BMSPlayerMode.PLAY, true, config, player, songUpdated);
 	}
 
     @FXML
 	public void loadAllBMS() {
+		commit();
 		loadBMS(null, true);
 	}
 
     @FXML
 	public void loadDiffBMS() {
+		commit();
 		loadBMS(null, false);
 	}
 
 	public void loadBMSPath(String updatepath){
+		commit();
     	loadBMS(updatepath, false);
 	}
 
@@ -639,41 +708,66 @@ public class PlayConfigurationView implements Initializable {
 	 */
 	public void loadBMS(String updatepath, boolean updateAll) {
 		commit();
-		try {
-			SongDatabaseAccessor songdb = MainLoader.getScoreDatabaseAccessor();
-			SongInformationAccessor infodb = config.isUseSongInfo() ?
-					new SongInformationAccessor(Paths.get("songinfo.db").toString()) : null;
-			Logger.getGlobal().info("song.db更新開始");
-			songdb.updateSongDatas(updatepath, updateAll, infodb);
-			Logger.getGlobal().info("song.db更新完了");
-			songUpdated = true;
-		} catch (ClassNotFoundException e) {
-			e.printStackTrace();
-		}
-	}
 
-    @FXML
-	public void loadTable() {
-		commit();
-		try {
-			Files.createDirectories(Paths.get(config.getTablepath()));
-		} catch (IOException e) {
-		}
+		ResourceBundle bundle = ResourceBundle.getBundle("resources.UIResources");
+		final Stage loadingBarStage = new Stage();
+        Runnable progressRunnable = () -> {
+			// JavaFX UI code must be run inside a Platform run context
+            Platform.runLater(new Runnable() {
+                @Override
+                public void run() {
+                    loadingBarStage.setResizable(false);
+					// This modality freezes the launcher/primary stage
+                    loadingBarStage.initModality(Modality.APPLICATION_MODAL);
+                    loadingBarStage.setTitle(bundle.getString("PROGRESS_BMS_TITLE"));
+					// This prevents users from seeing typical windowing system buttons
+                    loadingBarStage.initStyle(StageStyle.UNDECORATED);
 
-		try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get(config.getTablepath()))) {
-			paths.forEach((p) -> {
-				if(p.toString().toLowerCase().endsWith(".bmt")) {
-					try {
-						Files.deleteIfExists(p);
-					} catch (IOException e) {
-					}					
-				}
-			});
-		} catch (IOException e) {
-		}
+                    ProgressBar progressBar = new ProgressBar();
+                    progressBar.setPrefWidth(300);
 
-		TableDataAccessor tda = new TableDataAccessor(config.getTablepath());
-		tda.updateTableData(config.getTableURL());
+                    Label messageLabel = new Label(bundle.getString("PROGRESS_BMS_LABEL"));
+
+                    VBox root = new VBox(10);
+                    root.setStyle("-fx-padding: 20; -fx-alignment: center;");
+                    root.getChildren().addAll(messageLabel, progressBar);
+
+                    Scene scene = new Scene(root);
+                    loadingBarStage.setScene(scene);
+
+					// Prevents closing. This has the side effect of preventing windowing system close requests but
+					// the application can still be force killed by the user if necessary
+					loadingBarStage.setOnCloseRequest(Event::consume);
+                    loadingBarStage.show();
+                }
+            });
+        };
+
+        Runnable loadBMSRunnable = () -> {
+            try {
+                SongDatabaseAccessor songdb = MainLoader.getScoreDatabaseAccessor();
+                SongInformationAccessor infodb = config.isUseSongInfo() ?
+                        new SongInformationAccessor(Paths.get("songinfo.db").toString()) : null;
+                Logger.getGlobal().info("song.db更新開始");
+                songdb.updateSongDatas(updatepath, config.getBmsroot(), updateAll, infodb);
+                Logger.getGlobal().info("song.db更新完了");
+                songUpdated = true;
+
+				// Once again, JavaFX UI code must be run inside a Platform context. Hide progress bar and resume
+				// normal launcher behaviour
+				Platform.runLater(new Runnable() {
+					@Override
+					public void run() {
+						loadingBarStage.hide();
+					}
+				});
+            } catch (ClassNotFoundException e) {
+                e.printStackTrace();
+            }
+        };
+
+        new Thread(progressRunnable).start();
+        new Thread(loadBMSRunnable).start();
 	}
 
     @FXML

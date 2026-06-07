@@ -16,30 +16,51 @@ import bms.player.beatoraja.Validatable;
  * 
  * @author exch
  */
-public class KeyInputLog implements Validatable {
+public final class KeyInputLog implements Validatable {
 	
 	public static final KeyInputLog[] EMPTYARRAY = new KeyInputLog[0];
 
 	/**
-	 * キー入力時間
-	 */
-	public int time;
+	 * キー入力時間(us)
+	 */	
+	private long presstime;
 	/**
 	 * キーコード
 	 */
-	public int keycode;
+	private int keycode;
 	/**
 	 * キー押し離し
 	 */
-	public boolean pressed;
+	private boolean pressed;
+
+	/**
+	 * キー入力時間(ms)。旧データとの互換性維持用
+	 */
+	long time;
 
 	public KeyInputLog() {
 	}
 
-	public KeyInputLog(int time, int keycode, boolean pressed) {
-		this.time = time;
+	public KeyInputLog(long presstime, int keycode, boolean pressed) {
+		setData(presstime, keycode, pressed);
+	}
+	
+	public void setData(long presstime, int keycode, boolean pressed) {
+		this.presstime = presstime;
 		this.keycode = keycode;
-		this.pressed = pressed;
+		this.pressed = pressed;		
+	}
+	
+	public long getTime() {
+		return presstime != 0 ? presstime : time * 1000;
+	}
+	
+	public int getKeycode() {
+		return keycode;
+	}
+	
+	public boolean isPressed() {
+		return pressed;
 	}
 
 	/**
@@ -54,7 +75,7 @@ public class KeyInputLog implements Validatable {
 		int[] sc = model.getMode().scratchKey;
 		Note[] ln = new Note[keys];
 		for (TimeLine tl : model.getAllTimeLines()) {
-			int i = tl.getTime();
+			long i = tl.getTime();
 			for (int lane = 0; lane < keys; lane++) {
 				Note note = tl.getNote(lane);
 				if (note != null) {
@@ -88,6 +109,10 @@ public class KeyInputLog implements Validatable {
 
 	@Override
 	public boolean validate() {
-		return time >= 0 && keycode >= 0;
+		if(time > 0) {
+			presstime = time * 1000;
+			time = 0;
+		}
+		return presstime >= 0 && keycode >= 0;
 	}
 }

@@ -2,8 +2,8 @@ package bms.player.beatoraja.play;
 
 import bms.player.beatoraja.Config;
 import bms.player.beatoraja.MainState;
+import bms.player.beatoraja.BMSPlayerMode;
 import bms.player.beatoraja.PlayerResource;
-import bms.player.beatoraja.PlayerResource.PlayMode;
 import bms.player.beatoraja.skin.Skin.SkinObjectRenderer;
 import bms.player.beatoraja.skin.SkinObject;
 import bms.player.beatoraja.skin.StretchType;
@@ -43,15 +43,15 @@ public class SkinBGA extends SkinObject {
 		super.prepare(time, state);
 		if(draw) {
 			final int s = player.getState();
-			player.main.getPlayerResource().getBGAManager().prepareBGA(
+			player.resource.getBGAManager().prepareBGA(
 					s == BMSPlayer.STATE_PRELOAD || s == BMSPlayer.STATE_PRACTICE || s == BMSPlayer.STATE_READY ? -1
-							: player.main.getNowTime(TIMER_PLAY));
+							: player.timer.getNowTime(TIMER_PLAY));
 		}
 	}
 
 	public void draw(SkinObjectRenderer sprite) {
-		final PlayerResource resource = player.main.getPlayerResource();
-		if (resource.getPlayMode() == PlayMode.PRACTICE) {
+		final PlayerResource resource = player.resource;
+		if (resource.getPlayMode().mode == BMSPlayerMode.Mode.PRACTICE) {
 			player.getPracticeConfiguration().draw(region, sprite, time, player);
 		} else if (resource.getBGAManager() != null) {
 			resource.getBGAManager().drawBGA(this,sprite,region);

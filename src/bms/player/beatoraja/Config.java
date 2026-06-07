@@ -3,14 +3,14 @@ package bms.player.beatoraja;
 import static bms.player.beatoraja.Resolution.*;
 
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.util.Arrays;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 import com.badlogic.gdx.math.MathUtils;
 import com.badlogic.gdx.utils.Json;
 import com.badlogic.gdx.utils.JsonWriter.OutputType;
-
-import bms.player.beatoraja.play.JudgeAlgorithm;
 
 /**
  * 各種設定項目。config.jsonで保持される
@@ -18,6 +18,15 @@ import bms.player.beatoraja.play.JudgeAlgorithm;
  * @author exch
  */
 public class Config implements Validatable {
+	
+	/**
+	 * 旧コンフィグパス。そのうち削除
+	 */
+	static final Path configpath_old = Paths.get("config.json");
+	/**
+	 * コンフィグパス(UTF-8)
+	 */
+	static final Path configpath = Paths.get("config_sys.json");	
 
 	/**
 	 * 選択中のプレイヤー名
@@ -44,72 +53,18 @@ public class Config implements Validatable {
 	 * フォルダランプの有効/無効
 	 */
 	private boolean folderlamp = true;
-	/**
-	 * オーディオドライバー
-	 */
-	private int audioDriver = 0;
-	/**
-	 * オーディオ:OpenAL (libGDX Sound)
-	 */
-	public static final int AUDIODRIVER_SOUND = 0;
-	public static final int AUDIODRIVER_AUDIODEVICE = 1;
-	/**
-	 * オーディオ:PortAudio
-	 */
-	public static final int AUDIODRIVER_PORTAUDIO = 2;
 
 	/**
-	 * オーディオドライバー名
+	 * オーディオコンフィグ
 	 */
-	private String audioDriverName = null;
-	/**
-	 * オーディオバッファサイズ。大きすぎると音声遅延が発生し、少なすぎるとノイズが発生する
-	 */
-	private int audioDeviceBufferSize = 384;
-	/**
-	 * オーディオ同時発音数
-	 */
-	private int audioDeviceSimultaneousSources = 128;
+	private AudioConfig audio;
 
-	/**
-	 * オーディオ再生速度変化の処理:なし
-	 */
-	public static final int AUDIO_PLAY_UNPROCESSED = 0;
-	/**
-	 * オーディオ再生速度変化の処理:周波数を合わせる(速度に応じてピッチも変化)
-	 */
-	public static final int AUDIO_PLAY_FREQ = 1;
-	/**
-	 * オーディオ再生速度変化の処理:ピッチ変化なしに速度を変更(未実装)
-	 */
-	public static final int AUDIO_PLAY_SPEED = 1;
-	/**
-	 * PracticeモードのFREQUENCYオプションに対する音声処理方法
-	 */
-	private int audioFreqOption = AUDIO_PLAY_FREQ;
-	/**
-	 * 早送り再生に対する音声処理方法
-	 */
-	private int audioFastForward = AUDIO_PLAY_FREQ;
-
-	/**
-	 * システム音ボリューム
-	 */
-	private float systemvolume = 1.0f;
-	/**
-	 * キー音のボリューム
-	 */
-	private float keyvolume = 1.0f;
-	/**
-	 * BGノート音のボリューム
-	 */
-	private float bgvolume = 1.0f;
 	/**
 	 * 最大FPS。垂直同期OFFの時のみ有効
 	 */
 	private int maxFramePerSecond = 240;
-	
-	private int prepareFramePerSecond = 10000;
+
+	private int prepareFramePerSecond = 0;
 	/**
 	 * 検索バー同時表示上限数
 	 */
@@ -127,9 +82,18 @@ public class Config implements Validatable {
 	 */
 	private int scrolldurationhigh = 50;
 	/**
-	 * プレビュー音源をループするかどうか
+	 * 選曲バーとレーンカバーのアナログスクロール
 	 */
-	private boolean loopPreview = true;
+	private boolean analogScroll = true;
+	/**
+	 * 選曲バー移動速度に関連（アナログスクロール）
+	 */
+	private int analogTicksPerScroll = 3;
+
+	/**
+	 * プレビュー再生
+	 */
+	private SongPreview songPreview = SongPreview.LOOP;
 	/**
 	 * スキン画像のキャッシュイメージを作成するかどうか
 	 */
@@ -138,15 +102,6 @@ public class Config implements Validatable {
      * songinfoデータベースを使用するかどうか
      */
     private boolean useSongInfo = true;
-
-	/**
-	 * HIDDENノートを表示するかどうか
-	 */
-	private boolean showhiddennote = false;
-	/**
-	 * 通過ノートを表示するかどうか
-	 */
-	private boolean showpastnote = false;
 
 	private String songpath = SONGPATH_DEFAULT;
 	public static final String SONGPATH_DEFAULT = "songdata.db";
@@ -163,10 +118,12 @@ public class Config implements Validatable {
 	private String skinpath = SKINPATH_DEFAULT;
 	public static final String SKINPATH_DEFAULT = "skin";
 
-	private String bgmpath = "";
+	private String bgmpath = "bgm";
 
-	private String soundpath = "";
+	private String soundpath = "sound";
 
+	private String systemfontpath = "font/VL-Gothic-Regular.ttf";
+	private String messagefontpath = "font/VL-Gothic-Regular.ttf";
 	/**
 	 * BMSルートディレクトリパス
 	 */
@@ -185,7 +142,7 @@ public class Config implements Validatable {
 	/**
 	 * BGA拡大
 	 */
-	private int bgaExpand = BGAEXPAND_FULL;
+	private int bgaExpand = BGAEXPAND_KEEP_ASPECT_RATIO;
 	public static final int BGAEXPAND_FULL = 0;
 	public static final int BGAEXPAND_KEEP_ASPECT_RATIO = 1;
 	public static final int BGAEXPAND_OFF = 2;
@@ -193,8 +150,6 @@ public class Config implements Validatable {
 	private int frameskip = 1;
 
 	private boolean updatesong = false;
-
-	private int autosavereplay[] = {0,0,0,0};
 
 	private int skinPixmapGen = 4;
 	private int stagefilePixmapGen = 2;
@@ -206,23 +161,30 @@ public class Config implements Validatable {
 
 	private int irSendCount = 5;
 
-	private static final String[] DEFAULT_TABLEURL = { "http://bmsnormal2.syuriken.jp/table.html",
-			"http://bmsnormal2.syuriken.jp/table_insane.html",
-			"http://www.ribbit.xyz/bms/tables/normal.html",
-			"http://www.ribbit.xyz/bms/tables/insane.html",
+	private boolean useDiscordRPC = false;
+	private boolean setClipboardScreenshot = false;
+
+	private static final String[] DEFAULT_TABLEURL = { "https://rattoto10.jounin.jp/table.html",
+			"https://rattoto10.jounin.jp/table_insane.html",
+			"https://rattoto10.jounin.jp/table_overjoy.html",
+			"https://miraiscarlet.github.io/bms/table/genocide_normal/normal_bms.html",
+			"https://miraiscarlet.github.io/bms/table/genocide_insane/insane_bms.html",
 			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=easy",
 			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=normal",
 			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=hard",
 			"http://walkure.net/hakkyou/for_glassist/bms/?lamp=fc",
+			"https://stellabms.xyz/sl/table.html",
+			"https://stellabms.xyz/st/table.html",
 			"https://mocha-repository.info/table/dpn_header.json",
 			"https://mocha-repository.info/table/dpi_header.json",
+			"https://stellabms.xyz/dp/table.html",
+			"https://stellabms.xyz/dpst/table.html",
 			"https://mocha-repository.info/table/ln_header.json",
-			"http://stellawingroad.web.fc2.com/new/pms.html",
+			"https://pmsdifficulty.xxxxxxxx.jp/_pastoral_insane_table.html",
 			"https://excln.github.io/table24k/table.html",
 	};
 
 	public Config() {
-		validate();
 	}
 
 	public String getPlayername() {
@@ -249,20 +211,12 @@ public class Config implements Validatable {
 		this.bga = bga;
 	}
 
-	public int getAudioDeviceBufferSize() {
-		return audioDeviceBufferSize;
+	public AudioConfig getAudioConfig() {
+		return audio;
 	}
 
-	public void setAudioDeviceBufferSize(int audioDeviceBufferSize) {
-		this.audioDeviceBufferSize = audioDeviceBufferSize;
-	}
-
-	public int getAudioDeviceSimultaneousSources() {
-		return audioDeviceSimultaneousSources;
-	}
-
-	public void setAudioDeviceSimultaneousSources(int audioDeviceSimultaneousSources) {
-		this.audioDeviceSimultaneousSources = audioDeviceSimultaneousSources;
+	public void setAudioConfig(AudioConfig audio) {
+		this.audio = audio;
 	}
 
 	public int getMaxFramePerSecond() {
@@ -329,14 +283,6 @@ public class Config implements Validatable {
 		this.windowHeight = height;
 	}
 
-	public boolean isShowhiddennote() {
-		return showhiddennote;
-	}
-
-	public void setShowhiddennote(boolean showhiddennote) {
-		this.showhiddennote = showhiddennote;
-	}
-
 	public int getFrameskip() {
 		return frameskip;
 	}
@@ -390,85 +336,26 @@ public class Config implements Validatable {
 		this.scrolldurationhigh = scrolldurationhigh;
 	}
 
-	public boolean isLoopPreview() {
-		return loopPreview;
+    public boolean isAnalogScroll() {
+        return analogScroll;
+    }
+    public void setAnalogScroll(boolean analogScroll) {
+        this.analogScroll = analogScroll;
+    }
+
+    public int getAnalogTicksPerScroll() {
+        return analogTicksPerScroll;
+    }
+    public void setAnalogTicksPerScroll(int analogTicksPerScroll) {
+        this.analogTicksPerScroll = Math.max(analogTicksPerScroll, 1);
+    }
+
+	public SongPreview getSongPreview() {
+		return songPreview;
 	}
 
-	public void setLoopPreview(boolean loopPreview) {
-		this.loopPreview = loopPreview;
-	}
-
-	public float getKeyvolume() {
-		if(keyvolume < 0 || keyvolume > 1) {
-			keyvolume = 1;
-		}
-		return keyvolume;
-	}
-
-	public void setKeyvolume(float keyvolume) {
-		this.keyvolume = keyvolume;
-	}
-
-	public float getBgvolume() {
-		if(bgvolume < 0 || bgvolume > 1) {
-			bgvolume = 1;
-		}
-		return bgvolume;
-	}
-
-	public void setBgvolume(float bgvolume) {
-		this.bgvolume = bgvolume;
-	}
-
-	public boolean isShowpastnote() {
-		return showpastnote;
-	}
-
-	public void setShowpastnote(boolean showpastnote) {
-		this.showpastnote = showpastnote;
-	}
-
-	public int getAudioDriver() {
-		if(audioDriver != Config.AUDIODRIVER_SOUND && audioDriver != Config.AUDIODRIVER_PORTAUDIO) {
-			audioDriver = Config.AUDIODRIVER_SOUND;
-		}
-		return audioDriver;
-	}
-
-	public void setAudioDriver(int audioDriver) {
-		this.audioDriver = audioDriver;
-	}
-
-	public String getAudioDriverName() {
-		return audioDriverName;
-	}
-
-	public void setAudioDriverName(String audioDriverName) {
-		this.audioDriverName = audioDriverName;
-	}
-
-	public int getAudioFreqOption() {
-		return audioFreqOption;
-	}
-
-	public void setAudioFreqOption(int audioFreqOption) {
-		this.audioFreqOption = audioFreqOption;
-	}
-
-	public int getAudioFastForward() {
-		return audioFastForward;
-	}
-
-	public void setAudioFastForward(int audioFastForward) {
-		this.audioFastForward = audioFastForward;
-	}
-
-	public void setAutoSaveReplay(int autoSaveReplay[]){
-		this.autosavereplay = autoSaveReplay;
-	}
-
-	public int[] getAutoSaveReplay(){
-		return autosavereplay;
+	public void setSongPreview(SongPreview songPreview) {
+		this.songPreview = songPreview;
 	}
 
 	public boolean isUseSongInfo() {
@@ -495,15 +382,20 @@ public class Config implements Validatable {
 		this.cacheSkinImage = cacheSkinImage;
 	}
 
-	public float getSystemvolume() {
-		if(systemvolume < 0 || systemvolume > 1) {
-			systemvolume = 1;
-		}
-		return systemvolume;
+	public boolean isUseDiscordRPC() {
+		return useDiscordRPC;
 	}
 
-	public void setSystemvolume(float systemvolume) {
-		this.systemvolume = systemvolume;
+	public void setUseDiscordRPC(boolean useDiscordRPC) {
+		this.useDiscordRPC = useDiscordRPC;
+	}
+	
+	public boolean isSetClipboardWhenScreenshot() {
+		return setClipboardScreenshot;
+	}
+
+	public void setClipboardWhenScreenshot(boolean setClipboardScreenshot) {
+		this.setClipboardScreenshot = setClipboardScreenshot;
 	}
 
 	public boolean isUpdatesong() {
@@ -610,26 +502,38 @@ public class Config implements Validatable {
 		this.skinpath = skinpath;
 	}
 
+	public String getSystemfontpath() {
+		return systemfontpath;
+	}
+
+	public void setSystemfontpath(String systemfontpath) {
+		this.systemfontpath = systemfontpath;
+	}
+
+	public String getMessagefontpath() {
+		return messagefontpath;
+	}
+
+	public void setMessagefontpath(String messagefontpath) {
+		this.messagefontpath = messagefontpath;
+	}
+
 	public boolean validate() {
-		if(displaymode == null) {
-			displaymode = DisplayMode.WINDOW;
-		}
-		if(resolution == null) {
-			resolution = Resolution.HD;
-		}
+		displaymode = (displaymode != null) ? displaymode : DisplayMode.WINDOW;
+		resolution = (resolution != null) ? resolution : Resolution.HD;
+
 		windowWidth = MathUtils.clamp(windowWidth, Resolution.SD.width, Resolution.ULTRAHD.width);
 		windowHeight = MathUtils.clamp(windowHeight, Resolution.SD.height, Resolution.ULTRAHD.height);
-		audioDriver = MathUtils.clamp(audioDriver, 0, 2);
-		audioDeviceBufferSize = MathUtils.clamp(audioDeviceBufferSize, 4, 4096);
-		audioDeviceSimultaneousSources = MathUtils.clamp(audioDeviceSimultaneousSources, 16, 1024);
-		audioFreqOption = MathUtils.clamp(audioFreqOption, 0, AUDIO_PLAY_SPEED);
-		audioFastForward = MathUtils.clamp(audioFastForward, 0, AUDIO_PLAY_SPEED);
-		systemvolume = MathUtils.clamp(systemvolume, 0f, 1f);
-		keyvolume = MathUtils.clamp(keyvolume, 0f, 1f);
-		bgvolume = MathUtils.clamp(bgvolume, 0f, 1f);
-		maxFramePerSecond = MathUtils.clamp(maxFramePerSecond, 0, 10000);
-		prepareFramePerSecond = MathUtils.clamp(prepareFramePerSecond, 1, 10000);
+
+		if(audio == null) {
+			audio = new AudioConfig();
+		}
+		audio.validate();
+		maxFramePerSecond = MathUtils.clamp(maxFramePerSecond, 0, 50000);
+		prepareFramePerSecond = MathUtils.clamp(prepareFramePerSecond, 0, 100000);
         maxSearchBarCount = MathUtils.clamp(maxSearchBarCount, 1, 100);
+        songPreview = (songPreview != null) ? songPreview : SongPreview.LOOP;
+
 		scrolldurationlow = MathUtils.clamp(scrolldurationlow, 2, 1000);
 		scrolldurationhigh = MathUtils.clamp(scrolldurationhigh, 1, 1000);
 		irSendCount = MathUtils.clamp(irSendCount, 1, 100);
@@ -648,12 +552,6 @@ public class Config implements Validatable {
 
 		bga = MathUtils.clamp(bga, 0, 2);
 		bgaExpand = MathUtils.clamp(bgaExpand, 0, 2);
-		if(autosavereplay == null) {
-			autosavereplay = new int[4];
-		}
-		if(autosavereplay.length != 4) {
-			autosavereplay = Arrays.copyOf(autosavereplay, 4);
-		}
 		if (ipfsurl == null) {
 			ipfsurl = "https://gateway.ipfs.io/";
 		}
@@ -668,14 +566,23 @@ public class Config implements Validatable {
 
 	public static Config read() {
 		Config config = null;
-		if (Files.exists(MainController.configpath)) {
+		if (Files.exists(configpath)) {
 			Json json = new Json();
 			json.setIgnoreUnknownFields(true);
-			try (FileReader reader = new FileReader(MainController.configpath.toFile())) {
+			try (Reader reader = new InputStreamReader(new FileInputStream(configpath.toFile()), StandardCharsets.UTF_8)) {
 				config = json.fromJson(Config.class, reader);
 			} catch (Exception e) {
 				e.printStackTrace();
 			}
+		} else if(Files.exists(configpath_old)) {
+			// 旧コンフィグ読み込み。そのうち削除
+			Json json = new Json();
+			json.setIgnoreUnknownFields(true);
+			try (FileReader reader = new FileReader(configpath_old.toFile())) {
+				config = json.fromJson(Config.class, reader);
+			} catch (Exception e) {
+				e.printStackTrace();
+			}			
 		}
 		if(config == null) {
 			config = new Config();
@@ -691,7 +598,7 @@ public class Config implements Validatable {
 		Json json = new Json();
 		json.setUsePrototypes(false);
 		json.setOutputType(OutputType.json);
-		try (FileWriter writer = new FileWriter(MainController.configpath.toFile())) {
+		try (Writer writer = new OutputStreamWriter(new FileOutputStream(configpath.toFile()), StandardCharsets.UTF_8)) {
 			writer.write(json.prettyPrint(config));
 			writer.flush();
 		} catch (IOException e) {
@@ -717,5 +624,9 @@ public class Config implements Validatable {
 
 	public enum DisplayMode {
 		FULLSCREEN,BORDERLESS,WINDOW;
+	}
+
+	public enum SongPreview {
+		NONE,ONCE,LOOP;
 	}
 }

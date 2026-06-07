@@ -1,11 +1,14 @@
 package bms.player.beatoraja.select.bar;
 
-import bms.player.beatoraja.IRScoreData;
+import bms.player.beatoraja.ScoreData;
 import bms.player.beatoraja.song.SongData;
 import com.badlogic.gdx.graphics.Pixmap;
 
 import java.util.ArrayList;
-import java.util.List;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.LinkedHashMap;
+import java.util.stream.Collectors;
 
 /**
  * 楽曲バー
@@ -16,7 +19,7 @@ public class SongBar extends SelectableBar {
     /**
      * 楽曲データ
      */
-    private SongData song;
+    private final SongData song;
     /**
      * バナーデータ
      */
@@ -30,11 +33,11 @@ public class SongBar extends SelectableBar {
         this.song = song;
     }
 
-    public SongData getSongData() {
+    public final SongData getSongData() {
         return song;
     }
 
-    public boolean existsSong() {
+    public final boolean existsSong() {
     	return song.getPath() != null;
     }
 
@@ -55,17 +58,12 @@ public class SongBar extends SelectableBar {
     }
 
     @Override
-    public String getTitle() {
+    public final String getTitle() {
         return song.getFullTitle();
     }
 
-    @Override
-    public String getArtist() {
-        return song.getFullArtist();
-    }
-
     public int getLamp(boolean isPlayer) {
-    	final IRScoreData score = isPlayer ? getScore() : getRivalScore();
+    	final ScoreData score = isPlayer ? getScore() : getRivalScore();
         if (score != null) {
             return score.getClear();
         }
@@ -79,20 +77,15 @@ public class SongBar extends SelectableBar {
      */
     public static SongBar[] toSongBarArray(SongData[] songs) {
         // 重複除外
-        int count = songs.length;
-        for(int i = 0;i < songs.length;i++) {
-            if(songs[i] == null) {
-                continue;
-            }
-            for(int j = i + 1;j < songs.length;j++) {
-                if(songs[j] != null && songs[i].getSha256().equals(songs[j].getSha256())) {
-                    songs[j] = null;
-                    count--;
-                }
-            }
-        }
+        // remove duplicates by sha256
+        ArrayList<SongData> filteredSongs = new ArrayList<>(Arrays.stream(songs).collect(
+                Collectors.toMap(SongData::getSha256, p -> p, (p, q) -> p, LinkedHashMap::new)).values());
+        // remove null
+        filteredSongs.removeAll(Collections.singleton(null));
+
+        int count = filteredSongs.size();
         SongBar[] result = new SongBar[count--];
-        for(SongData song : songs) {
+        for(SongData song : filteredSongs) {
             if(song != null) {
                 result[count--] = new SongBar(song);
             }

@@ -1,55 +1,61 @@
 package bms.player.beatoraja.pattern;
 
+import bms.model.Mode;
+
 public enum Random {
-	IDENTITY(0, RandomUnit.LANE, 0, false),
-	MIRROR(1, RandomUnit.LANE, 0, false),
-	RANDOM(2, RandomUnit.LANE, 0, false),
-	R_RANDOM(3, RandomUnit.LANE, 0, false),
-	S_RANDOM(4, RandomUnit.NOTE, 0, false),
-	SPIRAL(5, RandomUnit.NOTE, 1, false),
-	H_RANDOM(6, RandomUnit.NOTE, 1, false),
-	ALL_SCR(7, RandomUnit.NOTE, 1, true),
-	RANDOM_EX(8, RandomUnit.LANE, 1, true),
-	S_RANDOM_EX(9, RandomUnit.NOTE, 1, true);
+	IDENTITY(RandomUnit.NONE, false),
+	MIRROR(RandomUnit.LANE, false),
+	RANDOM(RandomUnit.LANE, false),
+	ROTATE(RandomUnit.LANE, false),
+	S_RANDOM(RandomUnit.NOTE, false),
+	SPIRAL(RandomUnit.NOTE, false),
+	H_RANDOM(RandomUnit.NOTE, false),
+	ALL_SCR(RandomUnit.NOTE, true),
+	MIRROR_EX(RandomUnit.LANE, true),
+	RANDOM_EX(RandomUnit.LANE, true),
+	ROTATE_EX(RandomUnit.LANE, true),
+	S_RANDOM_EX(RandomUnit.NOTE, true),
 
-	/**
-	 * PlayerConfigから渡されるid
-	 */
-	public final int id;
+    CROSS(RandomUnit.LANE, false),
 
-	/**
-	 * オプションのアシスト値
-	 * 0: 制約なし
-	 * 1: アシストランプ スコア保存なし
-	 * 2: ランプ更新なし スコア保存なし
-	 */
-	public final int assist;
+    CONVERGE(RandomUnit.NOTE, true),
+    S_RANDOM_NO_THRESHOLD(RandomUnit.NOTE, false),
+    RANDOM_PLAYABLE(RandomUnit.LANE, true),
+    S_RANDOM_PLAYABLE(RandomUnit.NOTE, true),
+
+    FLIP(RandomUnit.PLAYER, true),
+    BATTLE(RandomUnit.PLAYER, true),
+    ;
 
 	public final RandomUnit unit;
+	
+	public static final Random[] OPTION_GENERAL = 
+		{IDENTITY, MIRROR, RANDOM, ROTATE, S_RANDOM, SPIRAL, H_RANDOM, ALL_SCR, RANDOM_EX, S_RANDOM_EX};
+	public static final Random[] OPTION_PMS = 
+		{IDENTITY, MIRROR, RANDOM, ROTATE, S_RANDOM_NO_THRESHOLD, SPIRAL, H_RANDOM, CONVERGE, RANDOM_PLAYABLE, S_RANDOM_PLAYABLE};
+
+	public static final Random[] OPTION_DOUBLE = {IDENTITY, FLIP};
+	public static final Random[] OPTION_SINGLE = {IDENTITY, BATTLE};
 
 	/**
 	 * 変更レーンにスクラッチレーンを含むか
 	 */
 	public final boolean isScratchLaneModify;
 
-	private Random(int id, RandomUnit unit, int assist, boolean s) {
-		this.id = id;
+	private Random(RandomUnit unit, boolean s) {
 		this.unit = unit;
-		this.assist = assist;
 		this.isScratchLaneModify = s;
 	}
 
-	public static Random getRandom(int id) {
-		for(Random r : Random.values()) {
-			if (r.id == id) {
-				return r;
-			}
-		}
-		return Random.IDENTITY;
-	}
+	public static Random getRandom(int id, Mode mode) {
+		final Random[] randoms = switch(mode) {
+			case POPN_5K, POPN_9K -> OPTION_PMS;
+			default -> OPTION_GENERAL;
+		};
+		return id >= 0 && id < randoms.length ? randoms[id] : IDENTITY;
+	}	
 }
 
 enum RandomUnit {
-	LANE,
-	NOTE
+	NONE, LANE, NOTE, PLAYER;
 }

@@ -2,6 +2,8 @@ package bms.player.beatoraja;
 
 import bms.model.Mode;
 import bms.player.beatoraja.input.BMSPlayerInputDevice;
+import bms.player.beatoraja.play.BMSPlayerRule;
+import bms.player.beatoraja.play.JudgeAlgorithm;
 
 import java.io.*;
 import java.util.Base64;
@@ -10,11 +12,10 @@ import java.util.zip.GZIPOutputStream;
 
 /**
  * スコアデータ
- * LR2のスコアデータを元に拡張している
  *
- * @author ununique
+ * @author exch
  */
-public class IRScoreData implements Validatable {
+public final class ScoreData implements Validatable {
 
 	// TODO 各OPでのクリア、各DPオプションでのクリア、増加型/減少型プレイゲージでの最大クリア
 
@@ -22,10 +23,12 @@ public class IRScoreData implements Validatable {
 	 * 譜面のハッシュ値
 	 */
 	private String sha256 = "";
+	
+	private String id = "";
 	/**
 	 * プレイヤー名。自身のスコアの場合は空白
 	 */
-	private String player = "";
+	private String player = "unknown";
 
 	private int mode = 0;
 	
@@ -80,6 +83,10 @@ public class IRScoreData implements Validatable {
 	private int passnotes = 0;
 	
 	private int minbp = Integer.MAX_VALUE;
+	
+	private long avgjudge = Long.MAX_VALUE;
+	
+	private long totalDuration = 0;
 	/**
 	 * 各譜面オプションのクリア履歴
 	 */
@@ -97,6 +104,10 @@ public class IRScoreData implements Validatable {
 	 */
 	private int option;
 	/**
+	 * オプションのRandom Seed
+	 */	
+	private long seed = -1;
+	/**
 	 * アシストオプション
 	 */
 	private int assist;
@@ -112,35 +123,49 @@ public class IRScoreData implements Validatable {
 	private int state;
 	
 	private String scorehash = "";
-
+	/**
+	 * プレイモード
+	 */
 	private final Mode playmode;
 
-	public IRScoreData() {
+	private JudgeAlgorithm judgeAlgorithm;
+	
+	private BMSPlayerRule rule;
+	
+	private String skin;
+
+	public ScoreData() {
 		this(Mode.BEAT_7K);
 	}
 
-	public IRScoreData(Mode playmode) {
+	public ScoreData(Mode playmode) {
 		this.playmode = playmode;
 	}
 	
 	public long getDate() {
 		return date;
 	}
+	
 	public void setDate(long date) {
 		this.date = date;
 	}
+	
 	public int getPlaycount() {
 		return playcount;
 	}
+	
 	public void setPlaycount(int playcount) {
 		this.playcount = playcount;
 	}
+	
 	public int getClear() {
 		return clear;
 	}
+	
 	public void setClear(int clear) {
 		this.clear = clear;
 	}
+	
 	public int getEpg() {
 		return epg;
 	}
@@ -228,67 +253,61 @@ public class IRScoreData implements Validatable {
 	 * @return 判定のカウント数
 	 */
 	public int getJudgeCount(int judge, boolean fast) {
-		switch (judge) {
-			case 0:
-				return fast ? epg : lpg;
-			case 1:
-				return fast ? egr : lgr;
-			case 2:
-				return fast ? egd : lgd;
-			case 3:
-				return fast ? ebd : lbd;
-			case 4:
-				return fast ? epr : lpr;
-			case 5:
-				return fast ? ems : lms;
-		}
-		return 0;
+		return switch (judge) {
+			case 0 -> fast ? epg : lpg;
+			case 1 -> fast ? egr : lgr;
+			case 2 -> fast ? egd : lgd;
+			case 3 -> fast ? ebd : lbd;
+			case 4 -> fast ? epr : lpr;
+			case 5 -> fast ? ems : lms;
+			default -> 0;
+		};
 	}
 
 	public void addJudgeCount(int judge, boolean fast, int count) {
 		switch (judge) {
-		case 0:
-			if(fast) {
-				epg += count;
-			} else {
-				lpg += count;
+			case 0 -> {
+				if(fast) {
+					epg += count;
+				} else {
+					lpg += count;
+				}
 			}
-			break;
-		case 1:
-			if(fast) {
-				egr += count;
-			} else {
-				lgr += count;
+			case 1 -> {
+				if(fast) {
+					egr += count;
+				} else {
+					lgr += count;
+				}
 			}
-			break;
-		case 2:
-			if(fast) {
-				egd += count;
-			} else {
-				lgd += count;
+			case 2 -> {
+				if(fast) {
+					egd += count;
+				} else {
+					lgd += count;
+				}
 			}
-			break;
-		case 3:
-			if(fast) {
-				ebd += count;
-			} else {
-				lbd += count;
+			case 3 -> {
+				if(fast) {
+					ebd += count;
+				} else {
+					lbd += count;
+				}
 			}
-			break;
-		case 4:
-			if(fast) {
-				epr += count;
-			} else {
-				lpr += count;
+			case 4 -> {
+				if(fast) {
+					epr += count;
+				} else {
+					lpr += count;
+				}
 			}
-			break;
-		case 5:
-			if(fast) {
-				ems += count;
-			} else {
-				lms += count;
+			case 5 -> {
+				if(fast) {
+					ems += count;
+				} else {
+					lms += count;
+				}
 			}
-			break;
 		}
 	}
 
@@ -322,6 +341,24 @@ public class IRScoreData implements Validatable {
 	public void setMinbp(int minbp) {
 		this.minbp = minbp;
 	}
+	
+
+	public long getAvgjudge() {
+		return avgjudge;
+	}
+
+	public void setAvgjudge(long avgjudge) {
+		this.avgjudge = avgjudge;
+	}
+
+	public long getTotalDuration() {
+		return totalDuration;
+	}
+
+	public void setTotalDuration(long ttoalDuration) {
+		this.totalDuration = ttoalDuration;
+	}
+
 	public String getTrophy() {
 		return trophy;
 	}
@@ -349,6 +386,14 @@ public class IRScoreData implements Validatable {
 		this.sha256 = sha256;
 	}
 	
+	public String getID() {
+		return id;
+	}
+
+	public void setID(String id) {
+		this.id = id != null ? id : "";
+	}
+
 	public String getPlayer() {
 		return player;
 	}
@@ -366,6 +411,15 @@ public class IRScoreData implements Validatable {
 	public void setRandom(int random) {
 		this.random = random;
 	}
+	
+	public long getSeed() {
+		return seed;
+	}
+
+	public void setSeed(long seed) {
+		this.seed = seed;
+	}
+
 	public String getScorehash() {
 		return scorehash;
 	}
@@ -393,6 +447,30 @@ public class IRScoreData implements Validatable {
 
 	public Mode getPlaymode() {
 		return playmode;
+	}
+
+	public JudgeAlgorithm getJudgeAlgorithm() {
+		return judgeAlgorithm;
+	}
+
+	public void setJudgeAlgorithm(JudgeAlgorithm judgeAlgorithm) {
+		this.judgeAlgorithm = judgeAlgorithm;
+	}
+
+	public BMSPlayerRule getRule() {
+		return rule;
+	}
+
+	public void setRule(BMSPlayerRule rule) {
+		this.rule = rule;
+	}
+
+	public String getSkin() {
+		return skin;
+	}
+
+	public void setSkin(String skin) {
+		this.skin = skin;
 	}
 
 	public String getGhost() {
@@ -450,14 +528,25 @@ public class IRScoreData implements Validatable {
 	 * @param newscore スコアデータ
 	 * @return スコアデータが更新された場合はtrue
 	 */
-	public boolean update(IRScoreData newscore) {
+	public boolean update(ScoreData newscore) {
+		return update(newscore, true);
+	}
+
+	/**
+	 * 指定したスコアデータを元に更新する
+	 * @param newscore スコアデータ
+	 * @param updateScore スコアを更新するかどうか。falseの場合はクリアのみ更新対象にする
+	 * @return スコアデータが更新された場合はtrue
+	 */
+	public boolean update(ScoreData newscore, boolean updateScore) {
 		boolean update = false;
 		if (clear < newscore.getClear()) {
 			setClear(newscore.getClear());
 			setOption(newscore.getOption());
+			setSeed(newscore.getSeed());
 			update = true;
 		}
-		if (getExscore() < newscore.getExscore()) {
+		if (getExscore() < newscore.getExscore() && updateScore) {
 			setEpg(newscore.getEpg());
 			setLpg(newscore.getLpg());
 			setEgr(newscore.getEgr());
@@ -471,17 +560,26 @@ public class IRScoreData implements Validatable {
 			setEms(newscore.getEms());
 			setLms(newscore.getLms());
 			setOption(newscore.getOption());
+			setSeed(newscore.getSeed());
 			setGhost(newscore.getGhost());
 			update = true;
 		}
-		if (getMinbp() > newscore.getMinbp()) {
-			setMinbp(newscore.getMinbp());
+		if (getAvgjudge() > newscore.getAvgjudge() && updateScore) {
+			setAvgjudge(newscore.getAvgjudge());
 			setOption(newscore.getOption());
+			setSeed(newscore.getSeed());
 			update = true;
 		}
-		if (getCombo() < newscore.getCombo()) {
+		if (getMinbp() > newscore.getMinbp() && updateScore) {
+			setMinbp(newscore.getMinbp());
+			setOption(newscore.getOption());
+			setSeed(newscore.getSeed());
+			update = true;
+		}
+		if (getCombo() < newscore.getCombo() && updateScore) {
 			setCombo(newscore.getCombo());
 			setOption(newscore.getOption());
+			setSeed(newscore.getSeed());
 			update = true;
 		}
 		return update;
@@ -493,7 +591,7 @@ public class IRScoreData implements Validatable {
 				epg >= 0 && lpg >= 0 && egr >= 0 && lgr >= 0 && egd >= 0 && lgd >= 0 &&
 				ebd >= 0 && lbd >= 0 && epr >= 0 && lpr >= 0 && ems >= 0 && lms >= 0 &&
 				clearcount >= 0 && playcount >= clearcount && maxcombo >= 0 && notes > 0 && passnotes >= 0 && passnotes <= notes &&minbp >= 0 &&
-				random >= 0 && option >= 0 && assist >= 0 && gauge >= 0;
+				avgjudge >= 0 && random >= 0 && option >= 0 && assist >= 0 && gauge >= 0;
 	}
 
 	public int getPassnotes() {
@@ -563,6 +661,7 @@ public class IRScoreData implements Validatable {
 		sb.append("\"Notes\": ").append(getNotes()).append(", ");
 		sb.append("\"Clearcount\": ").append(getClearcount()).append(", ");
 		sb.append("\"Minbp\": ").append(getMinbp()).append(", ");
+		sb.append("\"Avgjudge\": ").append(getAvgjudge()).append(", ");
 		sb.append("\"Trophy\": \"").append(getTrophy()).append("\", ");
 		sb.append("\"Option\": ").append(getOption()).append(", ");
 		sb.append("\"State\": ").append(getState()).append(", ");

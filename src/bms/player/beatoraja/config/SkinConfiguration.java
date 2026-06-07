@@ -7,6 +7,7 @@ import static bms.player.beatoraja.skin.SkinProperty.*;
 import bms.player.beatoraja.PlayerConfig;
 import bms.player.beatoraja.SkinConfig;
 import bms.player.beatoraja.input.BMSPlayerInputProcessor;
+import bms.player.beatoraja.input.KeyBoardInputProcesseor.ControlKeys;
 import bms.player.beatoraja.skin.*;
 import bms.player.beatoraja.skin.json.JSONSkinLoader;
 import bms.player.beatoraja.skin.lr2.LR2SkinHeaderLoader;
@@ -54,8 +55,7 @@ public class SkinConfiguration extends MainState {
 
 	public void render() {
 
-		if (main.getInputProcessor().isExitPressed()) {
-			main.getInputProcessor().setExitPressed(false);
+		if (main.getInputProcessor().isControlKeyPressed(ControlKeys.ESCAPE)) {
 			main.saveConfig();
 			main.changeState(MainStateType.MUSICSELECT);
 		}
@@ -78,6 +78,12 @@ public class SkinConfiguration extends MainState {
 		return (float)customOptionOffset / customOptionOffsetMax;		
 	}
 	
+	public void setSkinSelectPosition(float value) {
+		if (value >= 0 && value < 1) {
+			customOptionOffset = (int) (customOptionOffsetMax * value);
+		}
+	}
+
 	public String getCategoryName(int index) {
 		if (customOptions != null && index + customOptionOffset < customOptions.size()) {
 			return customOptions.get(index + customOptionOffset).getCategoryName();

@@ -1,707 +1,150 @@
 package bms.player.beatoraja.select;
 
-import static bms.player.beatoraja.select.MusicSelector.*;
+import static bms.player.beatoraja.SystemSoundManager.SoundType.*;
 
-import java.awt.Desktop;
-import java.io.IOException;
-import java.net.URI;
-import java.nio.file.DirectoryStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
+import java.util.function.Consumer;
 import java.util.logging.Logger;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
-import bms.player.beatoraja.PlayConfig;
-import bms.player.beatoraja.PlayerConfig;
-import bms.player.beatoraja.PlayerInformation;
-import bms.player.beatoraja.ir.IRChartData;
-import bms.player.beatoraja.ir.IRConnection;
-import bms.player.beatoraja.ir.IRCourseData;
 import bms.player.beatoraja.select.bar.*;
-import bms.player.beatoraja.result.AbstractResult;
 import bms.player.beatoraja.song.SongData;
 
+import java.awt.datatransfer.StringSelection;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+
 import com.badlogic.gdx.utils.Queue;
+import com.badlogic.gdx.graphics.Color;
 
 public enum MusicSelectCommand {
+	
+	// TODO 最終的には全てEventFactoryへ移動
 
-	/**
-	 * 次のMODEフィルター(5KEY, 7KEY, ...)へ移動
-	 */
-    NEXT_MODE {
-        @Override
-        public void execute(MusicSelector selector) {
-            int mode = 0;
-            PlayerConfig config = selector.main.getPlayerConfig();
-            for(;mode < MusicSelector.MODE.length && MusicSelector.MODE[mode] != config.getMode();mode++);
-            config.setMode(MusicSelector.MODE[(mode + 1) % MusicSelector.MODE.length]);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-	/**
-	 * 前のMODEフィルター(5KEY, 7KEY, ...)へ移動
-	 */
-    PREV_MODE {
-        @Override
-        public void execute(MusicSelector selector) {
-            int mode = 0;
-            PlayerConfig config = selector.main.getPlayerConfig();
-            for(;mode < MusicSelector.MODE.length && MusicSelector.MODE[mode] != config.getMode();mode++);
-            config.setMode(MusicSelector.MODE[(mode - 1 + MusicSelector.MODE.length) % MusicSelector.MODE.length]);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次の選曲バーソート(曲名,  クリアランプ, ...)へ移動
-     */
-    NEXT_SORT {
-        @Override
-        public void execute(MusicSelector selector) {
-            selector.setSort((selector.getSort() + 1) % BarSorter.values().length);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前の選曲バーソート(曲名,  クリアランプ, ...)へ移動
-     */
-    PREV_SORT {
-        @Override
-        public void execute(MusicSelector selector) {
-            selector.setSort((selector.getSort() - 1 + BarSorter.values().length) % BarSorter.values().length);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次のLNモードへ移動
-     */
-    NEXT_LNMODE {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setLnmode((config.getLnmode() + 1) % 3);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前のLNモードへ移動
-     */
-    PREV_LNMODE {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setLnmode((config.getLnmode() - 1 + 3) % 3);
-            selector.getBarRender().updateBar();
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    RESET_REPLAY {
-        @Override
-        public void execute(MusicSelector selector) {
-            if (selector.getBarRender().getSelected() instanceof SelectableBar) {
-                boolean[] replays = ((SelectableBar) selector.getBarRender().getSelected()).getExistsReplayData();
-                for (int i = 0; i < replays.length; i++) {
-                    if (replays[i]) {
-                        selector.setSelectedReplay(i);
-                        return;
-                    }
-                }
-            }
-            selector.setSelectedReplay(-1);
-        }
-    },
-    NEXT_REPLAY {
-        @Override
-        public void execute(MusicSelector selector) {
-            Bar current = selector.getBarRender().getSelected();
-            if (current != null && current instanceof SelectableBar) {
-                boolean[] replays = ((SelectableBar) current).getExistsReplayData();
-                for (int i = 1; i < replays.length; i++) {
-                    final int selectedreplay = selector.getSelectedReplay();
-                    if (replays[(i + selectedreplay) % replays.length]) {
-                        selector.setSelectedReplay((i + selectedreplay) % replays.length);
-                        selector.play(SOUND_OPTIONCHANGE);
-                        break;
-                    }
-                }
-            }
-        }
-    },
-    PREV_REPLAY {
-        @Override
-        public void execute(MusicSelector selector) {
-            Bar current = selector.getBarRender().getSelected();
-            if (current != null && current instanceof SelectableBar) {
-                boolean[] replays = ((SelectableBar) current).getExistsReplayData();
-                for (int i = 1; i < replays.length; i++) {
-                    final int selectedreplay = selector.getSelectedReplay();
-                    if (replays[(selectedreplay + replays.length - i) % replays.length]) {
-                        selector.setSelectedReplay((selectedreplay + replays.length - i) % replays.length);
-                        selector.play(SOUND_OPTIONCHANGE);
-                        break;
-                    }
-                }
-            }
-        }
-    },
-    NEXT_RIVAL {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerInformation nowrival = selector.getRival();
-            boolean match = (nowrival == null);
-            for(PlayerInformation rival : selector.getRivals()) {
-                if(match) {
-                    nowrival = rival;
-                    match = false;
-                    break;
-                }
-                match = (nowrival == rival);
-            }
-            if(match) {
-                nowrival = null;
-            }
-            selector.setRival(nowrival);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_RIVAL {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerInformation nowrival = null;
-            for(PlayerInformation rival : selector.getRivals()) {
-                if (rival == selector.getRival() && nowrival != null) {
-                    break;
-                }
-                nowrival = rival;
-            }
-            selector.setRival(nowrival);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_TARGET {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerInformation nowrival = selector.getRival();
-            boolean match = (nowrival == null);
-            for(PlayerInformation rival : selector.getRivals()) {
-                if(match) {
-                    nowrival = rival;
-                    match = false;
-                    break;
-                }
-                match = (nowrival == rival);
-            }
-            if(match) {
-                nowrival = null;
-            }
-            selector.setRival(nowrival);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_TARGET {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerInformation nowrival = null;
-            for(PlayerInformation rival : selector.getRivals()) {
-                if (rival == selector.getRival() && nowrival != null) {
-                    break;
-                }
-                nowrival = rival;
-            }
-            selector.setRival(nowrival);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次の1P側譜面オプションへ移動
-     */
-    NEXT_OPTION_1P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setRandom((config.getRandom() + 1) % 10);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前の1P側譜面オプションへ移動
-     */
-    PREV_OPTION_1P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setRandom((config.getRandom() - 1 + 10) % 10);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次の2P側譜面オプションへ移動
-     */
-    NEXT_OPTION_2P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setRandom2((config.getRandom2() + 1) % 10);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前の2P側譜面オプションへ移動
-     */
-    PREV_OPTION_2P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setRandom2((config.getRandom2() - 1 + 10) % 10);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次のDP譜面オプションへ移動
-     */
-    NEXT_OPTION_DP {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setDoubleoption((config.getDoubleoption() + 1) % 4);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前のDP譜面オプションへ移動
-     */
-    PREV_OPTION_DP {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setDoubleoption((config.getDoubleoption() - 1 + 4) % 4);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次のゲージオプションへ移動
-     */
-    NEXT_GAUGE_1P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setGauge((config.getGauge() + 1) % 6);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 前のゲージオプションへ移動
-     */
-    PREV_GAUGE_1P {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayerConfig config = selector.main.getPlayerConfig();
-            config.setGauge((config.getGauge() - 1 + 6) % 6);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 次のハイスピード固定オプションへ移動
-     */
-    NEXT_HSFIX {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null) {
-                pc.setFixhispeed((pc.getFixhispeed() + 1) % 5);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-        }
-    },
-    /**
-     * 前のハイスピード固定オプションへ移動
-     */
-    PREV_HSFIX {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null) {
-                pc.setFixhispeed((pc.getFixhispeed() + 4) % 5);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-        }
-    },
-    /**
-     * 楽曲ファイルの場所をOS既定のファイルブラウザーで開く
-     */
-    OPEN_WITH_EXPLORER {
-        @Override
-        public void execute(MusicSelector selector) {
-            Bar current = selector.getBarRender().getSelected();
-            try {
-                if (Desktop.isDesktopSupported()) {
-					if (current instanceof SongBar) {
-						final SongBar songbar = (SongBar) current;
-						if (songbar.existsSong()) {
-							Desktop.getDesktop().open(Paths.get(songbar.getSongData().getPath()).getParent().toFile());
-						} else if (songbar.getSongData() != null && songbar.getSongData().getOrg_md5() != null) {
-							String[] md5 = songbar.getSongData().getOrg_md5().toArray(
-									new String[songbar.getSongData().getOrg_md5().size()]);
-							SongData[] songdata = selector.getSongDatabase().getSongDatas(md5);
-							for (SongData sd : songdata) {
-								if (sd.getPath() != null) {
-									Desktop.getDesktop().open(Paths.get(sd.getPath()).getParent().toFile());
-									break;
-								}
-							}
-						} else {
-							Matcher m = Pattern.compile(".[^\\(\\[～~]*").matcher(current.getTitle());
-							if (m.find()) {
-								SongData[] songdata = selector.getSongDatabase().getSongDatasByText(m.group());
-								for (SongData sd : songdata) {
-									if (sd.getPath() != null) {
-										Desktop.getDesktop().open(Paths.get(sd.getPath()).getParent().toFile());
-										break;
-									}
-								}
-							}
-						}
-                    } else if(current instanceof FolderBar) {
-                        Desktop.getDesktop().open(Paths.get(((FolderBar) current).getFolderData().getPath()).toFile());
-                    }
-                }
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
-    },
-    /**
-     * 楽曲ファイルのDLサイトをOS既定のブラウザーで開く
-     */
-    OPEN_DOWNLOAD_SITE {
-        @Override
-        public void execute(MusicSelector selector) {
-            Bar current = selector.getBarRender().getSelected();
-            if(current instanceof SongBar) {
-            	final SongData song = ((SongBar) current).getSongData();
-            	if(song != null) {
-					if (song.getUrl() != null && song.getUrl().length() > 0) {
-						try {
-							URI uri = new URI(song.getUrl());
-							Desktop.getDesktop().browse(uri);
-						} catch (Throwable e) {
-							e.printStackTrace();
-						}
-					}
-					if (song.getAppendurl() != null && song.getAppendurl().length() > 0 && !song.getAppendurl().equals(song.getUrl())) {
-						try {
-							URI uri = new URI(song.getAppendurl());
-							Desktop.getDesktop().browse(uri);
-						} catch (Throwable e) {
-							e.printStackTrace();
-						}
-					}
+	RESET_REPLAY(selector -> {
+		if (selector.getBarManager().getSelected() instanceof SelectableBar bar) {
+			for (int i = 0; i < MusicSelector.REPLAY; i++) {
+				if (bar.existsReplay(i)) {
+					selector.setSelectedReplay(i);
+					return;
 				}
-            }
-        }
-    },
-    /**
-     * 楽曲ファイルのIRサイトをOS既定のブラウザーで開く
-     */
-    OPEN_RANKING_ON_IR {
-        @Override
-        public void execute(MusicSelector selector) {
-            IRConnection ir = selector.main.getIRStatus().length > 0 ? selector.main.getIRStatus()[0].connection : null;
-            if(ir == null) {
-                return;
-            }
-
-            Bar current = selector.getBarRender().getSelected();
-            String url = null;
-            if(current instanceof SongBar) {
-                url = ir.getSongURL(new IRChartData(((SongBar) current).getSongData()));
-            }
-            if(current instanceof GradeBar) {
-                url = ir.getCourseURL(new IRCourseData(((GradeBar) current).getCourseData()));
-            }
-            if (url != null) {
-                try {
-                    URI uri = new URI(url);
-                    Desktop.getDesktop().browse(uri);
-                } catch (Throwable e) {
-                    e.printStackTrace();
-                }
-            }
-        }
-    },
-    DOWNLOAD_IPFS {
-        @Override
-        public void execute(MusicSelector selector) {
-			Queue<DirectoryBar> dir = selector.getBarRender().getDirectory();
-			String[] acceptdomain = {"lnt.softether.net","www.ribbit.xyz","rattoto10.jounin.jp","flowermaster.web.fc2.com",
-					"stellawingroad.web.fc2.com","pmsdifficulty.xxxxxxxx.jp","walkure.net","stellabms.xyz","dpbmsdelta.web.fc2.com",
-					"cgi.geocities.jp/asahi3jpn","nekokan.dyndns.info"};
-			boolean startdownload = false;
-			for (DirectoryBar d : dir) {
-				if (d instanceof TableBar) {
-					String selecturl = ((TableBar) d).getUrl();
-					if (selecturl == null)
-						break;
-					for (String url : acceptdomain) {
-						if (selecturl.startsWith("http://" + url) || selecturl.startsWith("https://" + url)) {
-							Bar current = selector.getBarRender().getSelected();
-							if (current instanceof SongBar) {
-								final SongData song = ((SongBar) current).getSongData();
-								if (song != null && song.getIpfs() != null) {
-									selector.main.getMusicDownloadProcessor().start(song);
-									startdownload = true;
-								}
-							}
-							break;
-						}
-					}
-					if (!startdownload) {
-						Logger.getGlobal().info("ダウンロードは開始されませんでした。");
-					}
+			}
+		}
+		selector.setSelectedReplay(-1);
+	}),
+	NEXT_REPLAY(selector -> {
+		if (selector.getBarManager().getSelected() instanceof SelectableBar bar) {
+			for (int i = 1; i < MusicSelector.REPLAY; i++) {
+				final int selectedreplay = selector.getSelectedReplay();
+				if (bar.existsReplay((i + selectedreplay) % MusicSelector.REPLAY)) {
+					selector.setSelectedReplay((i + selectedreplay) % MusicSelector.REPLAY);
+					selector.play(OPTION_CHANGE);
 					break;
 				}
-
 			}
-
-        }
-    },
-    /**
-     * 楽曲ファイルのドキュメントをOS既定のドキュメントビューアーで開く
-     */
-    OPEN_DOCUMENT {
-        @Override
-        public void execute(MusicSelector selector) {
-            if (!Desktop.isDesktopSupported()) {
-            	return;
-            }
-            Bar current = selector.getBarRender().getSelected();
-            if(current instanceof SongBar && ((SongBar) current).existsSong()) {
-    			try (DirectoryStream<Path> paths = Files.newDirectoryStream(Paths.get(((SongBar) current).getSongData().getPath()).getParent())) {
-    				paths.forEach(p -> {
-    					if(!Files.isDirectory(p) && p.toString().toLowerCase().endsWith(".txt")) {
-                            try {
-								Desktop.getDesktop().open(p.toFile());
-							} catch (IOException e) {
-								e.printStackTrace();
+		}
+	}),
+	PREV_REPLAY(selector -> {
+		if (selector.getBarManager().getSelected() instanceof SelectableBar bar) {
+			for (int i = 1; i < MusicSelector.REPLAY; i++) {
+				final int selectedreplay = selector.getSelectedReplay();
+				if (bar.existsReplay((selectedreplay + MusicSelector.REPLAY - i) % MusicSelector.REPLAY)) {
+					selector.setSelectedReplay((selectedreplay + MusicSelector.REPLAY - i) % MusicSelector.REPLAY);
+					selector.play(OPTION_CHANGE);
+					break;
+				}
+			}
+		}
+	}),
+	/**
+	 * 譜面のMD5ハッシュをクリップボードにコピーする
+	 */
+	COPY_MD5_HASH(selector -> {
+		if (selector.getBarManager().getSelected() instanceof SongBar songbar) {
+			final SongData song = songbar.getSongData();
+			if (song != null) {
+				String hash = song.getMd5();
+				if (hash != null && hash.length() > 0) {
+					StringSelection stringSelection = new StringSelection(hash);
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					clipboard.setContents(stringSelection, null);
+					selector.main.getMessageRenderer().addMessage("MD5 hash copied : " + hash, 2000, Color.GOLD, 0);
+				}
+			}
+		}
+	}),
+	/**
+	 * 譜面のMD5ハッシュをクリップボードにコピーする
+	 */
+	COPY_SHA256_HASH(selector -> {
+		if (selector.getBarManager().getSelected() instanceof SongBar songbar) {
+			final SongData song = songbar.getSongData();
+			if (song != null) {
+				String hash = song.getSha256();
+				if (hash != null && hash.length() > 0) {
+					StringSelection stringSelection = new StringSelection(hash);
+					Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+					clipboard.setContents(stringSelection, null);
+					selector.main.getMessageRenderer().addMessage("SHA256 hash copied : " + hash, 2000, Color.GOLD, 0);
+				}
+			}
+		}
+	}),
+	DOWNLOAD_IPFS(selector -> {
+		Queue<DirectoryBar> dir = selector.getBarManager().getDirectory();
+		String[] acceptdomain = { "lnt.softether.net", "www.ribbit.xyz", "rattoto10.jounin.jp",
+				"flowermaster.web.fc2.com", "stellawingroad.web.fc2.com", "pmsdifficulty.xxxxxxxx.jp", "walkure.net",
+				"stellabms.xyz", "dpbmsdelta.web.fc2.com", "cgi.geocities.jp/asahi3jpn", "nekokan.dyndns.info" };
+		boolean startdownload = false;
+		for (DirectoryBar d : dir) {
+			if (d instanceof TableBar) {
+				String selecturl = ((TableBar) d).getUrl();
+				if (selecturl == null)
+					break;
+				for (String url : acceptdomain) {
+					if (selecturl.startsWith("http://" + url) || selecturl.startsWith("https://" + url)) {
+						Bar current = selector.getBarManager().getSelected();
+						if (current instanceof SongBar) {
+							final SongData song = ((SongBar) current).getSongData();
+							if (song != null && song.getIpfs() != null) {
+								selector.main.getMusicDownloadProcessor().start(song);
+								startdownload = true;
 							}
-    					}
-    				});
-    			} catch (Throwable e) {
-    				e.printStackTrace();
-    			}
-            }
-        }
-    },
-    /**
-     * 楽曲フォルダ/難易度表を更新する
-     */
-    UPDATE_FOLDER {
-
-		@Override
-		public void execute(MusicSelector selector) {
-            Bar selected = selector.getBarRender().getSelected();
-			if(selected instanceof FolderBar) {
-				selector.main.updateSong(((FolderBar) selected).getFolderData().getPath());
-			} else if(selected instanceof TableBar) {
-				selector.main.updateTable((TableBar) selected);
+						}
+						break;
+					}
+				}
+				if (!startdownload) {
+					Logger.getGlobal().info("ダウンロードは開始されませんでした。");
+				}
+				break;
 			}
-		}
-    },
-    JUDGETIMING_UP {
-		@Override
-		public void execute(MusicSelector selector) {
-	        final PlayerConfig config = selector.main.getPlayerConfig();
-            if (config.getJudgetiming() < PlayerConfig.JUDGETIMING_MAX) {
-                config.setJudgetiming(config.getJudgetiming() + 1);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-		}
-    },
-    JUDGETIMING_DOWN {
-		@Override
-		public void execute(MusicSelector selector) {
-	        final PlayerConfig config = selector.main.getPlayerConfig();
-            if (config.getJudgetiming() > PlayerConfig.JUDGETIMING_MIN) {
-                config.setJudgetiming(config.getJudgetiming() - 1);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-		}
-    },
-    DURATION_UP {
-		@Override
-		public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null && pc.getDuration() < 5000) {
-                pc.setDuration(pc.getDuration() + 1);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-		}
-    },
-    DURATION_DOWN {
-		@Override
-		public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null && pc.getDuration() > 1) {
-                pc.setDuration(pc.getDuration() - 1);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-		}
-    },
-    DURATION_UP_LARGE {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null && pc.getDuration() < 5000) {
-                int duration = pc.getDuration() + 10;
-                pc.setDuration(duration - duration % 10);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-        }
-    },
-    DURATION_DOWN_LARGE {
-        @Override
-        public void execute(MusicSelector selector) {
-            PlayConfig pc = selector.getSelectedBarPlayConfig();
-            if (pc != null && pc.getDuration() > 10) {
-                int duration = pc.getDuration() - 10;
-                pc.setDuration(duration - duration % 10);
-                selector.play(SOUND_OPTIONCHANGE);
-            }
-        }
-    },
-    NEXT_BGA_SHOW {
-		@Override
-		public void execute(MusicSelector selector) {
-            selector.main.getConfig().setBga((selector.main.getConfig().getBga() + 1) % 3);
-            selector.play(SOUND_OPTIONCHANGE);
-		}
-    },
-    PREV_BGA_SHOW {
-        @Override
-        public void execute(MusicSelector selector) {
-            selector.main.getConfig().setBga((selector.main.getConfig().getBga() - 1 + 3) % 3);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_GAUGEAUTOSHIFT {
-		@Override
-		public void execute(MusicSelector selector) {
-            selector.main.getPlayerConfig().setGaugeAutoShift((selector.main.getPlayerConfig().getGaugeAutoShift() + 1) % 5);
-            selector.play(SOUND_OPTIONCHANGE);
-		}
-    },
-    PREV_GAUGEAUTOSHIFT {
-        @Override
-        public void execute(MusicSelector selector) {
-            selector.main.getPlayerConfig().setGaugeAutoShift((selector.main.getPlayerConfig().getGaugeAutoShift() - 1 + 5) % 5);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_AUTOSAVEREPLAY_1 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[0] = (asr[0] + 1) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_AUTOSAVEREPLAY_1 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[0] = (asr[0] - 1 + AbstractResult.ReplayAutoSaveConstraint.values().length) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_AUTOSAVEREPLAY_2 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[1] = (asr[1] + 1) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_AUTOSAVEREPLAY_2 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[1] = (asr[1] - 1 + AbstractResult.ReplayAutoSaveConstraint.values().length) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_AUTOSAVEREPLAY_3 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[2] = (asr[2] + 1) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_AUTOSAVEREPLAY_3 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[2] = (asr[2] - 1 + AbstractResult.ReplayAutoSaveConstraint.values().length) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    NEXT_AUTOSAVEREPLAY_4 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[3] = (asr[3] + 1) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    PREV_AUTOSAVEREPLAY_4 {
-        @Override
-        public void execute(MusicSelector selector) {
-            int[] asr = selector.main.getConfig().getAutoSaveReplay();
-            asr[3] = (asr[3] - 1 + AbstractResult.ReplayAutoSaveConstraint.values().length) % AbstractResult.ReplayAutoSaveConstraint.values().length;
-            selector.main.getConfig().setAutoSaveReplay(asr);
-            selector.play(SOUND_OPTIONCHANGE);
-        }
-    },
-    /**
-     * 同一フォルダにある譜面を全て表示する．コースの場合は構成譜面を全て表示する
-     */
-    SHOW_SONGS_ON_SAME_FOLDER {
-        @Override
-        public void execute(MusicSelector selector) {
-        	final BarRenderer bar = selector.getBarRender();
-            Bar current = selector.getBarRender().getSelected();
-            if (current instanceof SongBar && ((SongBar) current).existsSong() &&
-                    (bar.getDirectory().size == 0 || !(bar.getDirectory().last() instanceof SameFolderBar))) {
-                SongData sd = ((SongBar) current).getSongData();
-                bar.updateBar(new SameFolderBar(selector, sd.getFullTitle(), sd.getFolder()));
-                selector.play(SOUND_FOLDEROPEN);
-            } else if (current instanceof GradeBar) {
-                List<Bar> songbars = Arrays.asList(((GradeBar) current).getSongDatas()).stream()
-                        .distinct()
-                        .map(SongBar::new)
-                        .collect(Collectors.toList());
-                bar.updateBar(new ContainerBar(current.getTitle(), songbars.toArray(new Bar[songbars.size()])));
-                selector.play(SOUND_FOLDEROPEN);
-            }
-        }    	
-    }
-    ;
 
-    public abstract void execute(MusicSelector selector);
+		}
+	}),
+	/**
+	 * 同一フォルダにある譜面を全て表示する．コースの場合は構成譜面を全て表示する
+	 */
+	SHOW_SONGS_ON_SAME_FOLDER(selector -> {
+		final BarManager bar = selector.getBarManager();
+		Bar current = selector.getBarManager().getSelected();
+		if (current instanceof SongBar && ((SongBar) current).existsSong()
+				&& (bar.getDirectory().size == 0 || !(bar.getDirectory().last() instanceof SameFolderBar))) {
+			SongData sd = ((SongBar) current).getSongData();
+			bar.updateBar(new SameFolderBar(selector, sd.getFullTitle(), sd.getFolder()));
+			selector.play(FOLDER_OPEN);
+		} else if (current instanceof GradeBar) {
+			List<Bar> songbars = Arrays.asList(((GradeBar) current).getSongDatas()).stream().distinct()
+					.map(SongBar::new).collect(Collectors.toList());
+			bar.updateBar(new ContainerBar(current.getTitle(), songbars.toArray(new Bar[songbars.size()])));
+			selector.play(FOLDER_OPEN);
+		}
+	});
+
+	public final Consumer<MusicSelector> function;
+
+	private MusicSelectCommand(Consumer<MusicSelector> function) {
+		this.function = function;
+	}
 }

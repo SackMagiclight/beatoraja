@@ -9,9 +9,18 @@ import org.luaj.vm2.lib.*;
 import org.luaj.vm2.lib.jse.JsePlatform;
 
 import bms.player.beatoraja.MainState;
+import bms.player.beatoraja.skin.SkinHeader;
+import bms.player.beatoraja.skin.SkinProperty;
+import bms.player.beatoraja.skin.SkinHeader.CustomOffset;
+import bms.player.beatoraja.skin.SkinHeader.CustomOption;
 import bms.player.beatoraja.skin.property.*;
 import bms.player.beatoraja.SkinConfig;
 
+/**
+ * Luaスキンからデータを参照するためのクラス
+ * 
+ * @author excln
+ */
 public class SkinLuaAccessor {
 	
 	private final Globals globals;
@@ -304,16 +313,18 @@ public class SkinLuaAccessor {
 	 * スキン設定をエクスポートする。
 	 * isGlobal にかかわらず、グローバル変数 skin_config にデータがセットされた状態にする。
 	 * Lua スキンは skin_config が nil のときヘッダのみ読み込めるようにする。
+	 * 
+	 * @param header スキンヘッダデータ
 	 * @param property Property (スキン設定データ)
 	 * @param filePathGetter スキン設定を元にファイルパスを解決する関数
 	 */
-	public void exportSkinProperty(SkinConfig.Property property, Function<String, String> filePathGetter) {
+	public void exportSkinProperty(SkinHeader header, SkinConfig.Property property, Function<String, String> filePathGetter) {
 		LuaTable table = new LuaTable();
-		exportSkinPropertyToTable(property, filePathGetter, table);
+		exportSkinPropertyToTable(header, property, filePathGetter, table);
 		globals.set("skin_config", table);
 	}
 
-	private void exportSkinPropertyToTable(SkinConfig.Property property, Function<String, String> filePathGetter, LuaTable table) {
+	private void exportSkinPropertyToTable(SkinHeader header, SkinConfig.Property property, Function<String, String> filePathGetter, LuaTable table) {
 		LuaTable file_path = new LuaTable();
 		for (SkinConfig.FilePath file : property.getFile()) {
 			file_path.set(file.name, file.path);
@@ -328,15 +339,30 @@ public class SkinLuaAccessor {
 
 		LuaTable options = new LuaTable();
 		LuaTable enabled_options = new LuaTable();
-		for (SkinConfig.Option op : property.getOption()){
-			options.set(op.name, op.value);
-			enabled_options.insert(enabled_options.length() + 1, LuaInteger.valueOf(op.value));
+		
+		for (CustomOption option : header.getCustomOptions()) {
+			int opvalue = option.getSelectedOption();
+			options.set(option.name, opvalue);
+			enabled_options.insert(enabled_options.length() + 1, LuaInteger.valueOf(opvalue));				
 		}
+
 		table.set("option", options);
 		table.set("enabled_options", enabled_options);
 
 		LuaTable offsets = new LuaTable();
-		for (SkinConfig.Offset ofs : property.getOffset()) {
+		
+		for(CustomOffset offset : header.getCustomOffsets()) {
+			SkinConfig.Offset ofs = null;
+			for (SkinConfig.Offset of : property.getOffset()) {
+				if(offset.name.equals(of.name)) {
+					ofs = of;
+					break;
+				}
+			}
+			if(ofs == null) {
+				ofs = new SkinConfig.Offset();
+				ofs.name = offset.name;
+			}
 			LuaTable offsetTable = new LuaTable();
 			offsetTable.set("x", ofs.x);
 			offsetTable.set("y", ofs.y);
@@ -344,7 +370,7 @@ public class SkinLuaAccessor {
 			offsetTable.set("h", ofs.h);
 			offsetTable.set("r", ofs.r);
 			offsetTable.set("a", ofs.a);
-			offsets.set(ofs.name, offsetTable);
+			offsets.set(ofs.name, offsetTable);			
 		}
 		table.set("offset", offsets);
 	}
